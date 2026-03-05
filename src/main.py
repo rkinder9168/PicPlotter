@@ -1,0 +1,1937 @@
+"""
+PicPlotter Auto - Single-window pywebview application.
+
+Provides a main dashboard and embedded map editor in one HTML UI.
+"""
+
+from __future__ import annotations
+
+import base64
+import io
+import json
+import math
+import threading
+import uuid
+import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+from urllib.parse import quote
+from urllib.request import Request, urlopen
+
+import webview
+from PIL import Image, ImageOps
+
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from src.config import (
+    CONFIG_DIR,
+    EXPORT_MAX_DIM,
+    TILE_SIZE,
+    get_asset_path,
+    get_google_maps_api_key,
+    set_google_maps_api_key,
+    get_netlify_token,
+    set_netlify_token,
+    get_netlify_site_id,
+)
+from src.netlify_deployer import NetlifyDeployer, verify_token as verify_netlify_token
+from src.exif_extractor import (
+    get_image_metadata,
+    get_supported_extensions,
+    is_supported_format,
+    HEIC_SUPPORTED,
+    GPSCoordinates,
+    ImageMetadata,
+)
+from src.html_map_generator import (
+    HTMLMapGenerator,
+    get_window_icon_path,
+    set_window_icon,
+)
+from src.image_processor import ImageProcessor
+from src.kmz_generator import create_kmz_from_files
+from src.marker_utils import get_colorizer
+from src.photo_groups import GroupAssignments, DEFAULT_GROUPS, PRESET_COLORS, PhotoGroup
+from src.utils import get_default_output_path, open_file_in_default_app, open_folder_containing
+from src.coordinate_transform import PixelPoint
+
+
+TILE_HOSTS = ("mt0.google.com", "mt1.google.com", "mt2.google.com", "mt3.google.com")
+TILE_URL = "https://{host}/vt/lyrs=s&x={x}&y={y}&z={z}"
+DEFAULT_GROUP_IDS = {group["id"] for group in DEFAULT_GROUPS}
+UI_MARKER_ICON_SIZE = 256
+PHOTO_PREVIEW_MAX_DIM = 450
+PHOTO_PREVIEW_QUALITY = 70
+
+
+@dataclass
+class AppState:
+    selected_files: List[str]
+    file_metadata: Dict[str, ImageMetadata]
+    gps_overrides: Dict[str, GPSCoordinates]
+    custom_map_path: Optional[str]
+    custom_marker_overrides: Dict[str, PixelPoint]
+    custom_autoplot_enabled: bool
+    marker_size: int
+    heading: int
+    custom_heading: int
+    output_folder: Optional[str]
+    overrides_path: Path
+    group_assignments: GroupAssignments
+    photo_aliases: Dict[str, str]
+    group_aliases: Dict[str, str]
+    photo_notes: Dict[str, str]
+    photo_previews: Dict[str, str]
+
+
+class AppApi:
+    def __init__(self, state: AppState):
+        self._state = state
+        self._window: Optional[webview.Window] = None
+        self._kmz_thread: Optional[threading.Thread] = None
+        self._kmz_lock = threading.Lock()
+
+    def attach_window(self, window: webview.Window) -> None:
+        self._window = window
+
+    def save_api_key(self, value: str) -> bool:
+        set_google_maps_api_key(value)
+        return True
+
+    def save_netlify_token(self, value: str) -> Dict[str, Any]:
+        """Save Netlify token and verify it."""
+        if not value or not value.strip():
+            set_netlify_token("")
+            return {"status": "ok", "message": "Token cleared"}
+
+        is_valid, message = verify_netlify_token(value.strip())
+        if is_valid:
+            set_netlify_token(value.strip())
+            return {"status": "ok", "message": message}
+        return {"status": "error", "message": message}
+
+    def get_netlify_token(self) -> str:
+        """Return the saved Netlify token."""
+        return get_netlify_token() or ""
+
+    def select_photos(self) -> Dict[str, Any]:
+        if not self._window:
+            return {"status": "error", "message": "Window not ready"}
+
+        patterns = ";".join(f"*{ext}" for ext in get_supported_extensions())
+        file_types = [
+            f"Image files ({patterns})",
+            "All files (*.*)",
+        ]
+
+        try:
+            result = self._window.create_file_dialog(
+                webview.FileDialog.OPEN,
+                allow_multiple=True,
+                file_types=file_types,
+            )
+        except Exception as exc:
+            return {"status": "error", "message": f"File dialog failed: {exc}"}
+
+        if not result:
+            return {"status": "cancel", "photos": self._build_photo_list()}
+
+        errors: List[str] = []
+        for filepath in result:
+            if filepath in self._state.selected_files:
+                continue
+            if not is_supported_format(filepath):
+                continue
+            try:
+                metadata = get_image_metadata(filepath)
+            except Exception as exc:
+                errors.append(f"{Path(filepath).name}: {exc}")
+                continue
+            self._state.file_metadata[filepath] = metadata
+            self._state.selected_files.append(filepath)
+
+        self._sync_group_assignments()
+
+        if not self._state.selected_files and errors:
+            message = "No supported photos loaded."
+            message = f"{message} {errors[0]}" if errors else message
+            return {"status": "error", "message": message}
+
+        response = {"status": "ok", "photos": self._build_photo_list()}
+        if errors:
+            response["warnings"] = errors[:3]
+        return response
+
+    def select_custom_map_image(self) -> Dict[str, Any]:
+        if not self._window:
+            return {"status": "error", "message": "Window not ready"}
+
+        file_types = [
+            "Image files (*.jpg;*.jpeg;*.png;*.tif;*.tiff)",
+            "All files (*.*)",
+        ]
+
+        try:
+            result = self._window.create_file_dialog(
+                webview.FileDialog.OPEN,
+                allow_multiple=False,
+                file_types=file_types,
+            )
+        except Exception as exc:
+            return {"status": "error", "message": f"File dialog failed: {exc}"}
+
+        if not result:
+            return {"status": "cancel"}
+
+        path = result[0]
+        try:
+            with Image.open(path) as image:
+                width, height = image.size
+        except Exception as exc:
+            return {"status": "error", "message": f"Unable to read image: {exc}"}
+
+        if self._state.custom_map_path and self._state.custom_map_path != path:
+            self._state.custom_marker_overrides = {}
+
+        self._state.custom_map_path = path
+        return {
+            "status": "ok",
+            "path": path,
+            "uri": _image_to_data_uri(path),
+            "file_uri": _path_to_uri(path),
+            "width": width,
+            "height": height,
+            "name": Path(path).name,
+        }
+
+    def clear_photos(self) -> Dict[str, Any]:
+        self._state.selected_files = []
+        self._state.file_metadata = {}
+        self._state.photo_previews = {}
+        _apply_overrides(
+            self._state,
+            {
+                "markers": [],
+                "custom_markers": [],
+                "custom_map_path": "",
+                "custom_heading": 0,
+            },
+        )
+        return {
+            "status": "ok",
+            "groups": self._serialize_groups(),
+            "preset_colors": PRESET_COLORS,
+            "marker_images": self._build_marker_images(),
+            "photos": [],
+        }
+
+    def delete_photos(self, filepaths: List[str]) -> Dict[str, Any]:
+        if not isinstance(filepaths, list) or not filepaths:
+            return {"status": "error", "message": "No photos selected."}
+
+        valid_paths = [path for path in filepaths if path in self._state.selected_files]
+        if not valid_paths:
+            return {"status": "error", "message": "Photo not found."}
+
+        for path in valid_paths:
+            if path in self._state.selected_files:
+                self._state.selected_files.remove(path)
+            self._state.file_metadata.pop(path, None)
+            self._state.gps_overrides.pop(path, None)
+            self._state.custom_marker_overrides.pop(path, None)
+            self._state.photo_aliases.pop(path, None)
+            self._state.photo_notes.pop(path, None)
+            self._state.photo_previews.pop(path, None)
+            self._state.group_assignments.unassign_photo(path)
+
+        markers_payload = []
+        for filepath, gps in self._state.gps_overrides.items():
+            markers_payload.append({
+                "filepath": filepath,
+                "latitude": gps.latitude,
+                "longitude": gps.longitude,
+                "altitude": gps.altitude,
+            })
+
+        custom_markers_payload = []
+        for filepath, pixel in self._state.custom_marker_overrides.items():
+            custom_markers_payload.append({
+                "filepath": filepath,
+                "x": pixel.x,
+                "y": pixel.y,
+            })
+
+        _apply_overrides(
+            self._state,
+            {
+                "markers": markers_payload,
+                "custom_markers": custom_markers_payload,
+            },
+        )
+
+        payload = self._groups_payload()
+        payload["photos"] = self._build_photo_list()
+        return payload
+
+    def get_photo_list(self) -> Dict[str, Any]:
+        self._sync_group_assignments()
+        return {"status": "ok", "photos": self._build_photo_list()}
+
+    def get_groups(self) -> Dict[str, Any]:
+        self._sync_group_assignments()
+        return self._groups_payload()
+
+    def set_photo_name(self, filepath: str, name: str) -> Dict[str, Any]:
+        if filepath not in self._state.selected_files:
+            return {"status": "error", "message": "Photo not found."}
+        cleaned = str(name or "").strip()
+        if cleaned:
+            self._state.photo_aliases[filepath] = cleaned
+        else:
+            self._state.photo_aliases.pop(filepath, None)
+        _apply_overrides(self._state, {})
+        return {"status": "ok", "photos": self._build_photo_list()}
+
+    def set_photo_note(self, filepath: str, note: str) -> Dict[str, Any]:
+        if filepath not in self._state.selected_files:
+            return {"status": "error", "message": "Photo not found."}
+        cleaned = str(note or "").strip()
+        if cleaned:
+            self._state.photo_notes[filepath] = cleaned
+        else:
+            self._state.photo_notes.pop(filepath, None)
+        _apply_overrides(self._state, {})
+        return {"status": "ok", "photos": self._build_photo_list()}
+
+    def add_group(self, name: str = "") -> Dict[str, Any]:
+        display_name = str(name or "").strip()
+        if not display_name:
+            display_name = f"Group {len(self._state.group_assignments.groups)}"
+
+        used_colors = {g.color.lower() for g in self._state.group_assignments.groups.values()}
+        next_color = "#F6D11A"
+        for preset in PRESET_COLORS:
+            if preset["hex"] == "default":
+                continue
+            if preset["hex"].lower() not in used_colors:
+                next_color = preset["hex"]
+                break
+
+        self._state.group_assignments.add_group(display_name, next_color)
+        _apply_overrides(self._state, {})
+        return self._groups_payload()
+
+    def delete_group(self, group_id: str) -> Dict[str, Any]:
+        if group_id in DEFAULT_GROUP_IDS:
+            return {"status": "error", "message": "Default groups cannot be deleted."}
+        group = self._state.group_assignments.get_group(group_id)
+        if not group:
+            return {"status": "error", "message": "Group not found."}
+
+        for filepath in list(group.photo_paths):
+            self._state.group_assignments.assign_photo(filepath, "default")
+        self._state.group_assignments.remove_group(group_id)
+        self._state.group_aliases.pop(group_id, None)
+        _apply_overrides(self._state, {})
+        return self._groups_payload()
+
+    def set_group_display_name(self, group_id: str, name: str) -> Dict[str, Any]:
+        if not self._state.group_assignments.get_group(group_id):
+            return {"status": "error", "message": "Group not found."}
+        cleaned = str(name or "").strip()
+        if cleaned:
+            self._state.group_aliases[group_id] = cleaned
+        else:
+            self._state.group_aliases.pop(group_id, None)
+        _apply_overrides(self._state, {})
+        return self._groups_payload()
+
+    def rename_group(self, group_id: str, new_name: str) -> Dict[str, Any]:
+        name = str(new_name or "").strip()
+        if not name:
+            return {"status": "error", "message": "Group name cannot be empty."}
+        if not self._state.group_assignments.rename_group(group_id, name):
+            return {"status": "error", "message": "Group not found."}
+        _apply_overrides(self._state, {})
+        return self._groups_payload()
+
+    def change_group_color(self, group_id: str, color: str) -> Dict[str, Any]:
+        color_value = str(color or "").strip()
+        if not color_value:
+            return {"status": "error", "message": "Color cannot be empty."}
+        if not self._state.group_assignments.change_group_color(group_id, color_value):
+            return {"status": "error", "message": "Group not found."}
+        _apply_overrides(self._state, {})
+        return self._groups_payload()
+
+    def assign_photo_group(self, filepath: Union[str, List[str]], group_id: str) -> Dict[str, Any]:
+        if isinstance(filepath, list):
+            raw_paths = filepath
+        else:
+            raw_paths = [filepath]
+
+        paths = [path for path in raw_paths if isinstance(path, str) and path]
+        if not paths:
+            return {"status": "error", "message": "No photos selected."}
+        if not self._state.group_assignments.get_group(group_id):
+            return {"status": "error", "message": "Group not found."}
+
+        seen = set()
+        valid_paths = []
+        for path in paths:
+            if path in self._state.selected_files and path not in seen:
+                valid_paths.append(path)
+                seen.add(path)
+        if not valid_paths:
+            return {"status": "error", "message": "Photo not found."}
+
+        for path in valid_paths:
+            self._state.group_assignments.assign_photo(path, group_id)
+        self._sync_group_assignments()
+        _apply_overrides(self._state, {})
+        return {
+            "status": "ok",
+            "photos": self._build_photo_list(),
+            "groups": self._serialize_groups(),
+        }
+
+    def select_output_folder(self) -> Dict[str, Any]:
+        if not self._window:
+            return {"status": "error", "message": "Window not ready"}
+
+        result = self._window.create_file_dialog(webview.FileDialog.FOLDER)
+        if not result:
+            return {"status": "cancel"}
+        folder = result[0]
+        self._state.output_folder = folder
+        return {"status": "ok", "path": folder}
+
+    def reset_output_folder(self) -> Dict[str, Any]:
+        self._state.output_folder = None
+        return {"status": "ok"}
+
+    def get_editor_state(self) -> Dict[str, Any]:
+        if not self._state.selected_files:
+            return {"status": "empty", "message": "No photos selected."}
+
+        self._sync_group_assignments()
+
+        custom_map_path = self._state.custom_map_path
+        custom_map_uri = ""
+        custom_map_file_uri = ""
+        if custom_map_path and Path(custom_map_path).exists():
+            custom_map_uri = _image_to_data_uri(custom_map_path)
+            custom_map_file_uri = _path_to_uri(custom_map_path)
+
+        photos = []
+        for filepath in self._state.selected_files:
+            metadata = self._state.file_metadata.get(filepath)
+            if not metadata:
+                continue
+            gps = metadata.gps
+            override = self._state.gps_overrides.get(filepath)
+            if override:
+                gps = override
+            gps_payload = None
+            if gps:
+                gps_payload = {
+                    "latitude": gps.latitude,
+                    "longitude": gps.longitude,
+                    "altitude": gps.altitude,
+                }
+            custom_pixel = self._state.custom_marker_overrides.get(filepath)
+            pixel_payload = None
+            if custom_pixel:
+                pixel_payload = {"x": custom_pixel.x, "y": custom_pixel.y}
+            group = self._state.group_assignments.get_group_for_photo(filepath)
+            group_id = group.id if group else "default"
+            group_color = group.color if group else "default"
+            custom_name = self._state.photo_aliases.get(filepath, "")
+            display_name = custom_name if custom_name else metadata.filename
+            note = self._state.photo_notes.get(filepath, "")
+            photos.append({
+                "filepath": filepath,
+                "filename": Path(filepath).name,
+                "display_name": display_name,
+                "custom_name": custom_name,
+                "note": note,
+                "has_gps": bool(metadata.gps),
+                "has_override": filepath in self._state.gps_overrides,
+                "gps": gps_payload,
+                "pixel": pixel_payload,
+                "group_id": group_id,
+                "group_color": group_color,
+            })
+
+        return {
+            "status": "ok",
+            "photos": photos,
+            "marker_size": self._state.marker_size,
+            "heading": self._state.heading,
+            "custom_heading": self._state.custom_heading,
+            "custom_map_path": custom_map_path,
+            "custom_map_uri": custom_map_uri,
+            "custom_map_file_uri": custom_map_file_uri,
+            "custom_autoplot_enabled": self._state.custom_autoplot_enabled,
+        }
+
+    def save_overrides(self, payload: Dict[str, Any]) -> bool:
+        try:
+            _apply_overrides(self._state, payload)
+            return True
+        except Exception:
+            return False
+
+    def export_html(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        output_path = self._prompt_html_save_path(payload)
+        if not output_path:
+            return {"status": "cancel"}
+
+        try:
+            self._sync_group_assignments()
+            map_source = payload.get("map_source", "tiles")
+            if map_source == "custom":
+                custom_markers = payload.get("custom_markers", [])
+                if not custom_markers:
+                    return {"status": "error", "message": "No placed photos available."}
+                custom_image_path = payload.get("custom_image_path") or self._state.custom_map_path
+                if not custom_image_path:
+                    return {"status": "error", "message": "No custom image selected."}
+                if not Path(custom_image_path).exists():
+                    return {"status": "error", "message": "Custom image not found."}
+
+                compression_quality = int(payload.get("compression_quality", 30))
+                processed_photos, marker_pixels = _process_custom_export(
+                    self._state,
+                    custom_markers,
+                    compression_quality,
+                )
+                heading = float(payload.get("heading", self._state.custom_heading))
+                export_image_path = custom_image_path
+                if heading:
+                    export_image_path, marker_pixels = _rotate_custom_map_for_export(
+                        custom_image_path,
+                        marker_pixels,
+                        heading,
+                    )
+
+                marker_size = int(payload.get("marker_size", self._state.marker_size))
+                custom_zoom = payload.get("custom_zoom")
+                try:
+                    zoom = float(custom_zoom)
+                    if zoom > 0:
+                        marker_size = max(1, int(round(marker_size / zoom)))
+                except (TypeError, ValueError):
+                    pass
+
+                generator = HTMLMapGenerator(
+                    project_name=payload.get("project_name", "Photo Map"),
+                    marker_size=marker_size,
+                    proposal_link=payload.get("proposal_link"),
+                    client_name=payload.get("client_name"),
+                    client_company=payload.get("client_company"),
+                    client_address=payload.get("client_address"),
+                )
+
+                result_path = generator.generate_single_html(
+                    processed_photos,
+                    export_image_path,
+                    transform=None,
+                    output_path=output_path,
+                    marker_pixels=marker_pixels,
+                    group_assignments=self._state.group_assignments,
+                    group_aliases=self._state.group_aliases,
+                )
+
+                _apply_overrides(self._state, payload)
+                if not open_file_in_default_app(result_path):
+                    open_folder_containing(result_path)
+                return {"status": "ok", "path": result_path}
+
+            map_state = payload.get("map_state", {})
+            center = map_state.get("center", {})
+            zoom = int(map_state.get("zoom", 19))
+            heading = float(map_state.get("heading", 0))
+            export_width = int(map_state.get("width", EXPORT_MAX_DIM))
+            export_height = int(map_state.get("height", EXPORT_MAX_DIM))
+
+            marker_size = int(payload.get("marker_size", self._state.marker_size))
+            viewport_width = payload.get("viewport_width")
+            viewport_height = payload.get("viewport_height")
+            scale = None
+            try:
+                if viewport_width:
+                    scale = float(export_width) / float(viewport_width)
+                elif viewport_height:
+                    scale = float(export_height) / float(viewport_height)
+            except (TypeError, ValueError, ZeroDivisionError):
+                scale = None
+            if scale and scale > 0:
+                marker_size = max(1, int(round(marker_size * scale)))
+
+            base_width, base_height = _compute_base_size(export_width, export_height, heading)
+            api_key = get_google_maps_api_key() or ""
+            map_image, left, top = _stitch_tiles(
+                float(center.get("lat", 0.0)),
+                float(center.get("lng", 0.0)),
+                zoom,
+                base_width,
+                base_height,
+                api_key=api_key,
+            )
+
+            map_image, expand_left, expand_top = _rotate_map_for_export(
+                map_image,
+                base_width,
+                base_height,
+                heading,
+            )
+
+            rotated_width, rotated_height = map_image.size
+            crop_left = int(round((rotated_width - export_width) / 2))
+            crop_top = int(round((rotated_height - export_height) / 2))
+            crop_box = (
+                crop_left,
+                crop_top,
+                crop_left + export_width,
+                crop_top + export_height,
+            )
+            map_image = map_image.crop(crop_box)
+            crop_left -= expand_left
+            crop_top -= expand_top
+
+            buffer = io.BytesIO()
+            map_image.save(buffer, format="PNG")
+            map_image_bytes = buffer.getvalue()
+            map_image_size = map_image.size
+            marker_pixels = _build_marker_pixels(
+                payload.get("markers", []),
+                left,
+                top,
+                base_width,
+                base_height,
+                heading,
+                crop_left,
+                crop_top,
+                zoom,
+            )
+
+            compression_quality = int(payload.get("compression_quality", 30))
+            processed_photos = _process_photos(self._state, payload.get("markers", []), compression_quality)
+
+            generator = HTMLMapGenerator(
+                project_name=payload.get("project_name", "Photo Map"),
+                marker_size=marker_size,
+                proposal_link=payload.get("proposal_link"),
+                client_name=payload.get("client_name"),
+                client_company=payload.get("client_company"),
+                client_address=payload.get("client_address"),
+            )
+
+            result_path = generator.generate_single_html(
+                processed_photos,
+                aerial_image_path=None,
+                transform=None,
+                output_path=output_path,
+                marker_pixels=marker_pixels,
+                group_assignments=self._state.group_assignments,
+                group_aliases=self._state.group_aliases,
+                aerial_image_bytes=map_image_bytes,
+                aerial_image_mime="image/png",
+                aerial_image_size=map_image_size,
+            )
+
+            _apply_overrides(self._state, payload)
+            if not open_file_in_default_app(result_path):
+                open_folder_containing(result_path)
+            return {"status": "ok", "path": result_path}
+        except Exception as exc:
+            return {"status": "error", "message": str(exc)}
+
+    def deploy_to_web(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Deploy HTML map to Netlify and return shareable URL."""
+        token = get_netlify_token()
+        if not token:
+            return {
+                "status": "error",
+                "message": "Please add your Netlify token in Options first.",
+            }
+
+        try:
+            self._sync_group_assignments()
+            map_source = payload.get("map_source", "tiles")
+
+            if map_source == "custom":
+                custom_markers = payload.get("custom_markers", [])
+                if not custom_markers:
+                    return {"status": "error", "message": "No placed photos available."}
+                custom_image_path = payload.get("custom_image_path") or self._state.custom_map_path
+                if not custom_image_path:
+                    return {"status": "error", "message": "No custom image selected."}
+                if not Path(custom_image_path).exists():
+                    return {"status": "error", "message": "Custom image not found."}
+
+                compression_quality = int(payload.get("compression_quality", 30))
+                processed_photos, marker_pixels = _process_custom_export(
+                    self._state,
+                    custom_markers,
+                    compression_quality,
+                )
+                heading = float(payload.get("heading", self._state.custom_heading))
+                export_image_path = custom_image_path
+                if heading:
+                    export_image_path, marker_pixels = _rotate_custom_map_for_export(
+                        custom_image_path,
+                        marker_pixels,
+                        heading,
+                    )
+
+                marker_size = int(payload.get("marker_size", self._state.marker_size))
+                custom_zoom = payload.get("custom_zoom")
+                try:
+                    zoom = float(custom_zoom)
+                    if zoom > 0:
+                        marker_size = max(1, int(round(marker_size / zoom)))
+                except (TypeError, ValueError):
+                    pass
+
+                generator = HTMLMapGenerator(
+                    project_name=payload.get("project_name", "Photo Map"),
+                    marker_size=marker_size,
+                    proposal_link=payload.get("proposal_link"),
+                    client_name=payload.get("client_name"),
+                    client_company=payload.get("client_company"),
+                    client_address=payload.get("client_address"),
+                )
+
+                html_content = generator.generate_single_html(
+                    processed_photos,
+                    export_image_path,
+                    transform=None,
+                    marker_pixels=marker_pixels,
+                    group_assignments=self._state.group_assignments,
+                    group_aliases=self._state.group_aliases,
+                    return_content=True,
+                )
+            else:
+                # Google tiles export
+                map_state = payload.get("map_state", {})
+                center = map_state.get("center", {})
+                zoom = int(map_state.get("zoom", 19))
+                heading = float(map_state.get("heading", 0))
+                export_width = int(map_state.get("width", EXPORT_MAX_DIM))
+                export_height = int(map_state.get("height", EXPORT_MAX_DIM))
+
+                marker_size = int(payload.get("marker_size", self._state.marker_size))
+                viewport_width = payload.get("viewport_width")
+                viewport_height = payload.get("viewport_height")
+                scale = None
+                try:
+                    if viewport_width:
+                        scale = float(export_width) / float(viewport_width)
+                    elif viewport_height:
+                        scale = float(export_height) / float(viewport_height)
+                except (TypeError, ValueError, ZeroDivisionError):
+                    scale = None
+                if scale and scale > 0:
+                    marker_size = max(1, int(round(marker_size * scale)))
+
+                base_width, base_height = _compute_base_size(export_width, export_height, heading)
+                api_key = get_google_maps_api_key() or ""
+                map_image, left, top = _stitch_tiles(
+                    float(center.get("lat", 0.0)),
+                    float(center.get("lng", 0.0)),
+                    zoom,
+                    base_width,
+                    base_height,
+                    api_key=api_key,
+                )
+
+                map_image, expand_left, expand_top = _rotate_map_for_export(
+                    map_image,
+                    base_width,
+                    base_height,
+                    heading,
+                )
+
+                rotated_width, rotated_height = map_image.size
+                crop_left = int(round((rotated_width - export_width) / 2))
+                crop_top = int(round((rotated_height - export_height) / 2))
+                crop_box = (
+                    crop_left,
+                    crop_top,
+                    crop_left + export_width,
+                    crop_top + export_height,
+                )
+                map_image = map_image.crop(crop_box)
+                crop_left -= expand_left
+                crop_top -= expand_top
+
+                buffer = io.BytesIO()
+                map_image.save(buffer, format="PNG")
+                map_image_bytes = buffer.getvalue()
+                map_image_size = map_image.size
+                marker_pixels = _build_marker_pixels(
+                    payload.get("markers", []),
+                    left,
+                    top,
+                    base_width,
+                    base_height,
+                    heading,
+                    crop_left,
+                    crop_top,
+                    zoom,
+                )
+
+                compression_quality = int(payload.get("compression_quality", 30))
+                processed_photos = _process_photos(self._state, payload.get("markers", []), compression_quality)
+
+                generator = HTMLMapGenerator(
+                    project_name=payload.get("project_name", "Photo Map"),
+                    marker_size=marker_size,
+                    proposal_link=payload.get("proposal_link"),
+                    client_name=payload.get("client_name"),
+                    client_company=payload.get("client_company"),
+                    client_address=payload.get("client_address"),
+                )
+
+                html_content = generator.generate_single_html(
+                    processed_photos,
+                    aerial_image_path=None,
+                    transform=None,
+                    marker_pixels=marker_pixels,
+                    group_assignments=self._state.group_assignments,
+                    group_aliases=self._state.group_aliases,
+                    aerial_image_bytes=map_image_bytes,
+                    aerial_image_mime="image/png",
+                    aerial_image_size=map_image_size,
+                    return_content=True,
+                )
+
+            # Deploy to Netlify
+            project_name = payload.get("project_name", "Photo Map")
+            deployer = NetlifyDeployer(token, get_netlify_site_id())
+            result = deployer.deploy(html_content, project_name)
+
+            if result.success:
+                _apply_overrides(self._state, payload)
+                return {
+                    "status": "ok",
+                    "url": result.url,
+                    "deployment_id": result.deployment_id,
+                }
+            else:
+                return {"status": "error", "message": result.error}
+
+        except Exception as exc:
+            return {"status": "error", "message": str(exc)}
+
+    def start_kmz_export(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        gps_files = []
+        for path in self._state.selected_files:
+            metadata = self._state.file_metadata.get(path)
+            if not metadata:
+                continue
+            if metadata.gps or path in self._state.gps_overrides:
+                gps_files.append(path)
+        if not gps_files:
+            return {"status": "error", "message": "No placed photos available."}
+
+        output_path = self._prompt_kmz_save_path(payload)
+        if not output_path:
+            return {"status": "cancel"}
+
+        with self._kmz_lock:
+            if self._kmz_thread and self._kmz_thread.is_alive():
+                return {"status": "busy", "message": "KMZ export already running."}
+
+            thread = threading.Thread(
+                target=self._run_kmz_export,
+                args=(gps_files, output_path, payload),
+                daemon=True,
+            )
+            self._kmz_thread = thread
+            thread.start()
+
+        return {"status": "started"}
+
+    def open_file(self, path: str) -> bool:
+        return open_file_in_default_app(path)
+
+    def open_folder(self, path: str) -> bool:
+        return open_folder_containing(path)
+
+    def on_closing(self) -> None:
+        return
+
+    def _run_kmz_export(self, files: List[str], output_path: str, payload: Dict[str, Any]) -> None:
+        def progress_callback(status: str, current: int, total: int) -> None:
+            if not self._window:
+                return
+            progress = (current / total) if total else 0
+            self._window.evaluate_js(
+                f"window.kmzProgress({json.dumps(status)}, {progress})"
+            )
+
+        try:
+            result_path, processed, skipped, errors = create_kmz_from_files(
+                files,
+                output_path,
+                project_name=payload.get("project_name", "PicPlotter Export"),
+                compression_quality=int(payload.get("compression_quality", 30)),
+                max_dimension=1920,
+                progress_callback=progress_callback,
+                gps_overrides=self._state.gps_overrides or None,
+            )
+
+            if self._window:
+                result = {
+                    "status": "ok",
+                    "path": result_path,
+                    "processed": processed,
+                    "skipped": skipped,
+                    "errors": errors,
+                }
+                self._window.evaluate_js(f"window.kmzComplete({json.dumps(result)})")
+        except Exception as exc:
+            if self._window:
+                self._window.evaluate_js(f"window.kmzError({json.dumps(str(exc))})")
+
+    def _prompt_html_save_path(self, payload: Dict[str, Any]) -> Optional[str]:
+        if not self._window:
+            return None
+        default_path = get_default_output_path(self._state.selected_files[0] if self._state.selected_files else None)
+        initial_dir = self._state.output_folder or str(Path(default_path).parent)
+        project_name = payload.get("project_name", "Photo Map")
+        save_name = f"{project_name}.html"
+        result = self._window.create_file_dialog(
+            webview.FileDialog.SAVE,
+            directory=initial_dir,
+            save_filename=save_name,
+            file_types=("HTML files (*.html)",),
+        )
+        if not result:
+            return None
+        return result[0]
+
+    def _prompt_kmz_save_path(self, payload: Dict[str, Any]) -> Optional[str]:
+        if not self._window:
+            return None
+        default_path = get_default_output_path(self._state.selected_files[0] if self._state.selected_files else None)
+        initial_dir = self._state.output_folder or str(Path(default_path).parent)
+        project_name = payload.get("project_name", "PicPlotter Export")
+        save_name = f"{project_name}.kmz"
+        result = self._window.create_file_dialog(
+            webview.FileDialog.SAVE,
+            directory=initial_dir,
+            save_filename=save_name,
+            file_types=("KMZ files (*.kmz)",),
+        )
+        if not result:
+            return None
+        return result[0]
+
+    def _sync_group_assignments(self) -> None:
+        _sync_group_assignments_state(self._state, prune_photos=bool(self._state.selected_files))
+
+    def _serialize_groups(self) -> List[Dict[str, Any]]:
+        groups = []
+        for group in self._state.group_assignments.get_all_groups():
+            custom_name = self._state.group_aliases.get(group.id, "")
+            display_name = custom_name if custom_name else group.name
+            groups.append({
+                "id": group.id,
+                "name": group.name,
+                "display_name": display_name,
+                "custom_name": custom_name,
+                "color": group.color,
+                "count": len(group.photo_paths),
+                "locked": group.id in DEFAULT_GROUP_IDS,
+            })
+        return groups
+
+    def _build_marker_images(self) -> Dict[str, str]:
+        colorizer = get_colorizer()
+        colors = {group.color for group in self._state.group_assignments.get_all_groups()}
+        images: Dict[str, str] = {}
+        for color in colors:
+            marker_bytes = colorizer.get_colored_marker_bytes(color, UI_MARKER_ICON_SIZE)
+            b64 = base64.b64encode(marker_bytes).decode("utf-8")
+            images[color] = f"data:image/png;base64,{b64}"
+        return images
+
+    def _groups_payload(self) -> Dict[str, Any]:
+        self._sync_group_assignments()
+        return {
+            "status": "ok",
+            "groups": self._serialize_groups(),
+            "preset_colors": PRESET_COLORS,
+            "marker_images": self._build_marker_images(),
+        }
+
+    def _get_photo_preview_uri(self, filepath: str) -> str:
+        cached = self._state.photo_previews.get(filepath)
+        if cached is not None:
+            return cached
+        preview_uri = _image_to_preview_data_uri(
+            filepath,
+            max_dimension=PHOTO_PREVIEW_MAX_DIM,
+            quality=PHOTO_PREVIEW_QUALITY,
+        )
+        self._state.photo_previews[filepath] = preview_uri
+        return preview_uri
+
+    def _build_photo_list(self) -> List[Dict[str, Any]]:
+        photos = []
+        for filepath in self._state.selected_files:
+            metadata = self._state.file_metadata.get(filepath)
+            if not metadata:
+                continue
+            group = self._state.group_assignments.get_group_for_photo(filepath)
+            group_id = group.id if group else "default"
+            group_color = group.color if group else "default"
+            custom_name = self._state.photo_aliases.get(filepath, "")
+            display_name = custom_name if custom_name else metadata.filename
+            note = self._state.photo_notes.get(filepath, "")
+            photos.append({
+                "filepath": filepath,
+                "filename": metadata.filename,
+                "display_name": display_name,
+                "custom_name": custom_name,
+                "note": note,
+                "preview_uri": self._get_photo_preview_uri(filepath),
+                "has_gps": bool(metadata.gps),
+                "has_override": filepath in self._state.gps_overrides,
+                "group_id": group_id,
+                "group_color": group_color,
+            })
+        return photos
+
+
+def _sync_group_assignments_state(state: AppState, prune_photos: bool = True) -> None:
+    if prune_photos:
+        selected = set(state.selected_files)
+        for group in state.group_assignments.groups.values():
+            group.photo_paths = [path for path in group.photo_paths if path in selected]
+        state.group_assignments.auto_assign_unassigned(state.selected_files)
+    if state.group_aliases:
+        valid_ids = set(state.group_assignments.groups.keys())
+        state.group_aliases = {
+            group_id: name
+            for group_id, name in state.group_aliases.items()
+            if group_id in valid_ids
+        }
+
+
+def _normalize_custom_markers(raw: Any) -> Dict[str, PixelPoint]:
+    markers: Dict[str, PixelPoint] = {}
+    if isinstance(raw, dict):
+        items = raw.items()
+    elif isinstance(raw, list):
+        items = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            items.append((item.get("filepath"), item))
+    else:
+        return markers
+
+    for filepath, entry in items:
+        if not filepath or not isinstance(entry, dict):
+            continue
+        x = entry.get("x")
+        y = entry.get("y")
+        try:
+            markers[str(filepath)] = PixelPoint(float(x), float(y))
+        except (TypeError, ValueError):
+            continue
+    return markers
+
+
+def _serialize_group_state(state: AppState) -> tuple[List[Dict[str, str]], Dict[str, str]]:
+    groups_payload: List[Dict[str, str]] = []
+    for group in state.group_assignments.get_all_groups():
+        groups_payload.append({
+            "id": group.id,
+            "name": group.name,
+            "color": group.color,
+        })
+
+    group_assignments_payload: Dict[str, str] = {}
+    for group in state.group_assignments.groups.values():
+        for filepath in group.photo_paths:
+            if filepath:
+                group_assignments_payload[filepath] = group.id
+
+    return groups_payload, group_assignments_payload
+
+
+def _load_overrides(
+    overrides_path: Path,
+) -> tuple[
+    int,
+    int,
+    int,
+    Dict[str, GPSCoordinates],
+    Optional[str],
+    Dict[str, PixelPoint],
+    bool,
+    Dict[str, str],
+    Dict[str, str],
+    Dict[str, str],
+    GroupAssignments,
+]:
+    marker_size = 96
+    heading = 0
+    custom_heading = heading
+    overrides: Dict[str, GPSCoordinates] = {}
+    custom_map_path: Optional[str] = None
+    custom_markers: Dict[str, PixelPoint] = {}
+    custom_autoplot_enabled = True
+    photo_aliases: Dict[str, str] = {}
+    group_aliases: Dict[str, str] = {}
+    photo_notes: Dict[str, str] = {}
+    group_assignments = GroupAssignments()
+
+    if overrides_path.exists():
+        try:
+            data = json.loads(overrides_path.read_text(encoding="utf-8"))
+            marker_size = int(data.get("marker_size", marker_size))
+            heading = int(data.get("heading", heading))
+            raw_custom_heading = data.get("custom_heading", heading)
+            try:
+                custom_heading = int(float(raw_custom_heading))
+            except (TypeError, ValueError):
+                custom_heading = heading
+            markers = data.get("markers", [])
+            for item in markers:
+                filepath = item.get("filepath")
+                if not filepath:
+                    continue
+                overrides[filepath] = GPSCoordinates(
+                    latitude=float(item.get("latitude", 0.0)),
+                    longitude=float(item.get("longitude", 0.0)),
+                    altitude=item.get("altitude"),
+                )
+            custom_map_path = data.get("custom_map_path") if isinstance(data.get("custom_map_path"), str) else None
+            custom_markers = _normalize_custom_markers(data.get("custom_markers", []))
+            raw_autoplot = data.get("custom_autoplot_enabled")
+            if isinstance(raw_autoplot, bool):
+                custom_autoplot_enabled = raw_autoplot
+            raw_photo_aliases = data.get("photo_aliases", {})
+            if isinstance(raw_photo_aliases, dict):
+                for filepath, name in raw_photo_aliases.items():
+                    if not isinstance(filepath, str) or not isinstance(name, str):
+                        continue
+                    cleaned = name.strip()
+                    if cleaned:
+                        photo_aliases[filepath] = cleaned
+            raw_group_aliases = data.get("group_aliases", {})
+            if isinstance(raw_group_aliases, dict):
+                for group_id, name in raw_group_aliases.items():
+                    if not isinstance(group_id, str) or not isinstance(name, str):
+                        continue
+                    cleaned = name.strip()
+                    if cleaned:
+                        group_aliases[group_id] = cleaned
+            raw_groups = data.get("groups", [])
+            if isinstance(raw_groups, list):
+                default_defs = {group["id"]: group for group in DEFAULT_GROUPS}
+                for entry in raw_groups:
+                    if not isinstance(entry, dict):
+                        continue
+                    group_id = entry.get("id")
+                    if not isinstance(group_id, str):
+                        continue
+                    group_id = group_id.strip()
+                    if not group_id:
+                        continue
+                    name = entry.get("name")
+                    color = entry.get("color")
+                    name_value = name.strip() if isinstance(name, str) else ""
+                    color_value = color.strip() if isinstance(color, str) else ""
+                    if group_id in group_assignments.groups:
+                        if name_value:
+                            group_assignments.groups[group_id].name = name_value
+                        if color_value:
+                            group_assignments.groups[group_id].color = color_value
+                        continue
+                    default_def = default_defs.get(group_id)
+                    fallback_name = default_def["name"] if default_def else group_id
+                    fallback_color = default_def["color"] if default_def else "default"
+                    group_assignments.groups[group_id] = PhotoGroup(
+                        id=group_id,
+                        name=name_value or fallback_name,
+                        color=color_value or fallback_color,
+                    )
+            raw_group_assignments = data.get("group_assignments", {})
+            if isinstance(raw_group_assignments, dict):
+                for filepath, group_id in raw_group_assignments.items():
+                    if not isinstance(filepath, str) or not isinstance(group_id, str):
+                        continue
+                    if group_id not in group_assignments.groups:
+                        continue
+                    group_assignments.assign_photo(filepath, group_id)
+            raw_photo_notes = data.get("photo_notes", {})
+            if isinstance(raw_photo_notes, dict):
+                for filepath, note in raw_photo_notes.items():
+                    if not isinstance(filepath, str) or not isinstance(note, str):
+                        continue
+                    cleaned = note.strip()
+                    if cleaned:
+                        photo_notes[filepath] = cleaned
+        except (OSError, json.JSONDecodeError, ValueError, TypeError):
+            pass
+
+    return (
+        marker_size,
+        heading,
+        custom_heading,
+        overrides,
+        custom_map_path,
+        custom_markers,
+        custom_autoplot_enabled,
+        photo_aliases,
+        group_aliases,
+        photo_notes,
+        group_assignments,
+    )
+
+
+def _apply_overrides(state: AppState, payload: Dict[str, Any]) -> None:
+    markers = payload.get("markers")
+    marker_size = int(payload.get("marker_size", state.marker_size))
+    raw_heading = payload.get("heading")
+    raw_custom_heading = payload.get("custom_heading")
+    map_source = payload.get("map_source")
+    heading = state.heading
+    custom_heading = state.custom_heading
+    parsed_heading: Optional[int] = None
+    parsed_custom_heading: Optional[int] = None
+    if raw_heading is not None:
+        try:
+            parsed_heading = int(float(raw_heading))
+        except (TypeError, ValueError):
+            parsed_heading = None
+    if raw_custom_heading is not None:
+        try:
+            parsed_custom_heading = int(float(raw_custom_heading))
+        except (TypeError, ValueError):
+            parsed_custom_heading = None
+
+    if map_source == "custom":
+        if parsed_custom_heading is not None:
+            custom_heading = parsed_custom_heading
+            if parsed_heading is not None:
+                heading = parsed_heading
+        elif parsed_heading is not None:
+            custom_heading = parsed_heading
+    else:
+        if parsed_heading is not None:
+            heading = parsed_heading
+        if parsed_custom_heading is not None:
+            custom_heading = parsed_custom_heading
+    custom_markers_raw = payload.get("custom_markers")
+    custom_map_path = payload.get("custom_map_path")
+    custom_autoplot_enabled = payload.get("custom_autoplot_enabled")
+
+    if markers is not None:
+        overrides: Dict[str, GPSCoordinates] = {}
+        for item in markers:
+            filepath = item.get("filepath")
+            if not filepath:
+                continue
+            overrides[filepath] = GPSCoordinates(
+                latitude=float(item.get("latitude", 0.0)),
+                longitude=float(item.get("longitude", 0.0)),
+                altitude=item.get("altitude"),
+            )
+        state.gps_overrides = overrides
+
+    if custom_markers_raw is not None:
+        custom_overrides: Dict[str, PixelPoint] = {}
+        for item in custom_markers_raw:
+            filepath = item.get("filepath")
+            if not filepath:
+                continue
+            try:
+                custom_overrides[filepath] = PixelPoint(
+                    float(item.get("x", 0.0)),
+                    float(item.get("y", 0.0)),
+                )
+            except (TypeError, ValueError):
+                continue
+        state.custom_marker_overrides = custom_overrides
+
+    if custom_map_path is not None:
+        cleaned_path = str(custom_map_path).strip()
+        state.custom_map_path = cleaned_path if cleaned_path else None
+
+    if isinstance(custom_autoplot_enabled, bool):
+        state.custom_autoplot_enabled = custom_autoplot_enabled
+
+    state.marker_size = marker_size
+    state.heading = heading
+    state.custom_heading = custom_heading
+    _sync_group_assignments_state(state, prune_photos=bool(state.selected_files))
+
+    markers_payload = []
+    for filepath, gps in state.gps_overrides.items():
+        markers_payload.append({
+            "filepath": filepath,
+            "latitude": gps.latitude,
+            "longitude": gps.longitude,
+            "altitude": gps.altitude,
+        })
+
+    custom_markers_payload = []
+    for filepath, pixel in state.custom_marker_overrides.items():
+        custom_markers_payload.append({
+            "filepath": filepath,
+            "x": pixel.x,
+            "y": pixel.y,
+        })
+
+    photo_aliases_payload = {
+        filepath: name
+        for filepath, name in state.photo_aliases.items()
+        if filepath and name
+    }
+    group_aliases_payload = {
+        group_id: name
+        for group_id, name in state.group_aliases.items()
+        if group_id and name
+    }
+    photo_notes_payload = {
+        filepath: note
+        for filepath, note in state.photo_notes.items()
+        if filepath and note
+    }
+    groups_payload, group_assignments_payload = _serialize_group_state(state)
+
+    data = {
+        "marker_size": marker_size,
+        "heading": heading,
+        "custom_heading": custom_heading,
+        "markers": markers_payload,
+        "custom_map_path": state.custom_map_path,
+        "custom_markers": custom_markers_payload,
+        "custom_autoplot_enabled": state.custom_autoplot_enabled,
+        "photo_aliases": photo_aliases_payload,
+        "groups": groups_payload,
+        "group_assignments": group_assignments_payload,
+        "group_aliases": group_aliases_payload,
+        "photo_notes": photo_notes_payload,
+    }
+    state.overrides_path.parent.mkdir(parents=True, exist_ok=True)
+    state.overrides_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _build_html(state: AppState) -> str:
+    template_path = get_asset_path("app.html")
+    html = template_path.read_text(encoding="utf-8")
+
+    marker_path = get_asset_path("marker_outlined_transparent.png")
+    marker_b64 = ""
+    if marker_path.exists():
+        marker_b64 = base64.b64encode(marker_path.read_bytes()).decode("utf-8")
+
+    initial_state = {
+        "api_key": get_google_maps_api_key() or "",
+        "marker_size": state.marker_size,
+        "heading": state.heading,
+        "heic_supported": HEIC_SUPPORTED,
+    }
+
+    html = html.replace("__INITIAL_STATE__", json.dumps(initial_state))
+    html = html.replace("__MARKER_ICON__", f"data:image/png;base64,{marker_b64}")
+    html = html.replace("__EXPORT_MAX_DIM__", str(EXPORT_MAX_DIM))
+    return html
+
+
+def _path_to_uri(path: str) -> str:
+    try:
+        return Path(path).resolve().as_uri()
+    except (ValueError, OSError):
+        return ""
+
+
+def _guess_mime_type(path: str) -> str:
+    ext = Path(path).suffix.lower()
+    if ext in (".jpg", ".jpeg"):
+        return "image/jpeg"
+    if ext == ".png":
+        return "image/png"
+    if ext in (".tif", ".tiff"):
+        return "image/tiff"
+    return "application/octet-stream"
+
+
+def _image_to_data_uri(path: str) -> str:
+    try:
+        data = Path(path).read_bytes()
+    except OSError:
+        return ""
+    mime = _guess_mime_type(path)
+    encoded = base64.b64encode(data).decode("utf-8")
+    return f"data:{mime};base64,{encoded}"
+
+
+def _image_to_preview_data_uri(
+    path: str,
+    max_dimension: int = PHOTO_PREVIEW_MAX_DIM,
+    quality: int = PHOTO_PREVIEW_QUALITY,
+) -> str:
+    try:
+        with Image.open(path) as img:
+            img = ImageOps.exif_transpose(img)
+            if img.mode in ("RGBA", "P", "LA"):
+                background = Image.new("RGB", img.size, (255, 255, 255))
+                if img.mode == "P":
+                    img = img.convert("RGBA")
+                alpha = img.split()[-1] if img.mode in ("RGBA", "LA") else None
+                background.paste(img, mask=alpha)
+                img = background
+            elif img.mode != "RGB":
+                img = img.convert("RGB")
+            img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+            buffer = io.BytesIO()
+            img.save(buffer, format="JPEG", quality=quality, optimize=True)
+            encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+            return f"data:image/jpeg;base64,{encoded}"
+    except Exception:
+        return ""
+
+
+def _write_html_file(html: str) -> str:
+    cache_dir = CONFIG_DIR / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"app_{uuid.uuid4().hex}.html"
+    path = cache_dir / filename
+    path.write_text(html, encoding="utf-8")
+    return str(path)
+
+
+def _clamp_lat(lat: float) -> float:
+    return max(min(lat, 85.0), -85.0)
+
+
+def _latlon_to_world_pixel(lat: float, lon: float, zoom: int) -> tuple[float, float]:
+    lat = _clamp_lat(lat)
+    siny = math.sin(math.radians(lat))
+    siny = min(max(siny, -0.9999), 0.9999)
+    x = TILE_SIZE * (0.5 + lon / 360.0)
+    y = TILE_SIZE * (0.5 - math.log((1 + siny) / (1 - siny)) / (4 * math.pi))
+    scale = 2 ** zoom
+    return x * scale, y * scale
+
+
+def _compute_base_size(width: int, height: int, heading: float) -> tuple[int, int]:
+    if not heading:
+        return width, height
+    angle = math.radians(abs(heading) % 360)
+    cos_a = abs(math.cos(angle))
+    sin_a = abs(math.sin(angle))
+    base_w = int(math.ceil(width * cos_a + height * sin_a))
+    base_h = int(math.ceil(width * sin_a + height * cos_a))
+    return base_w, base_h
+
+
+def _fetch_tile_image(x: int, y: int, z: int, api_key: str) -> Optional[Image.Image]:
+    headers = {"User-Agent": "Mozilla/5.0"}
+    host_index = (x + y + z) % len(TILE_HOSTS)
+    key_param = f"&key={quote(api_key)}" if api_key else ""
+
+    for attempt in range(len(TILE_HOSTS)):
+        host = TILE_HOSTS[(host_index + attempt) % len(TILE_HOSTS)]
+        url = TILE_URL.format(host=host, x=x, y=y, z=z)
+        url = f"{url}{key_param}"
+        try:
+            with urlopen(Request(url, headers=headers), timeout=10) as response:
+                data = response.read()
+            image = Image.open(io.BytesIO(data))
+            return image.convert("RGB")
+        except Exception:
+            continue
+
+    return None
+
+
+def _stitch_tiles(
+    center_lat: float,
+    center_lon: float,
+    zoom: int,
+    width: int,
+    height: int,
+    api_key: str = "",
+) -> tuple[Image.Image, float, float]:
+    center_x, center_y = _latlon_to_world_pixel(center_lat, center_lon, zoom)
+    left = center_x - width / 2
+    top = center_y - height / 2
+
+    max_tile = 2 ** zoom
+    min_tile_x = int(math.floor(left / TILE_SIZE))
+    max_tile_x = int(math.floor((left + width - 1) / TILE_SIZE))
+    min_tile_y = int(math.floor(top / TILE_SIZE))
+    max_tile_y = int(math.floor((top + height - 1) / TILE_SIZE))
+
+    image = Image.new("RGB", (width, height), (0, 0, 0))
+    tiles_to_fetch = []
+
+    for ty in range(min_tile_y, max_tile_y + 1):
+        if ty < 0 or ty >= max_tile:
+            continue
+        for tx in range(min_tile_x, max_tile_x + 1):
+            tile_x = tx % max_tile
+            tiles_to_fetch.append((tile_x, ty, tx))
+
+    tile_results: Dict[tuple[int, int, int], Image.Image] = {}
+    if tiles_to_fetch:
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {
+                executor.submit(_fetch_tile_image, tile_x, ty, zoom, api_key): (tile_x, ty, tx)
+                for tile_x, ty, tx in tiles_to_fetch
+            }
+            for future in as_completed(futures):
+                tile_x, ty, tx = futures[future]
+                tile = future.result()
+                if tile is None:
+                    continue
+                tile_results[(tile_x, ty, tx)] = tile
+
+    for (tile_x, ty, tx), tile in tile_results.items():
+        dest_x = int(round(tx * TILE_SIZE - left))
+        dest_y = int(round(ty * TILE_SIZE - top))
+        image.paste(tile, (dest_x, dest_y))
+
+    return image, left, top
+
+
+def _rotate_point(x: float, y: float, center_x: float, center_y: float, heading: float) -> tuple[float, float]:
+    if not heading:
+        return x, y
+    angle = math.radians(-heading)
+    dx = x - center_x
+    dy = y - center_y
+    cos_a = math.cos(angle)
+    sin_a = math.sin(angle)
+    rx = dx * cos_a - dy * sin_a + center_x
+    ry = dx * sin_a + dy * cos_a + center_y
+    return rx, ry
+
+
+def _save_map_image(map_image: Image.Image) -> str:
+    cache_dir = CONFIG_DIR / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"map_export_{uuid.uuid4().hex}.png"
+    path = cache_dir / filename
+    map_image.save(path, format="PNG")
+    return str(path)
+
+
+def _save_rotated_custom_map_image(map_image: Image.Image, source_path: str) -> str:
+    cache_dir = CONFIG_DIR / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    suffix = Path(source_path).suffix.lower()
+    if suffix in (".jpg", ".jpeg"):
+        filename = f"custom_map_rotated_{uuid.uuid4().hex}.jpg"
+        path = cache_dir / filename
+        if "A" in map_image.getbands():
+            map_image = map_image.convert("RGB")
+        map_image.save(path, format="JPEG", quality=95)
+        return str(path)
+
+    filename = f"custom_map_rotated_{uuid.uuid4().hex}.png"
+    path = cache_dir / filename
+    map_image.save(path, format="PNG")
+    return str(path)
+
+
+def _rotate_custom_marker_pixels(
+    marker_pixels: List[PixelPoint],
+    original_size: tuple[int, int],
+    heading: float,
+    rotated_size: tuple[int, int],
+) -> List[PixelPoint]:
+    if not heading:
+        return marker_pixels
+    center_x = original_size[0] / 2
+    center_y = original_size[1] / 2
+    new_center_x = rotated_size[0] / 2
+    new_center_y = rotated_size[1] / 2
+    angle = math.radians(-heading)
+    cos_a = math.cos(angle)
+    sin_a = math.sin(angle)
+    rotated: List[PixelPoint] = []
+    for pixel in marker_pixels:
+        dx = pixel.x - center_x
+        dy = pixel.y - center_y
+        rx = dx * cos_a - dy * sin_a + new_center_x
+        ry = dx * sin_a + dy * cos_a + new_center_y
+        rotated.append(PixelPoint(rx, ry))
+    return rotated
+
+
+def _rotate_custom_map_for_export(
+    image_path: str,
+    marker_pixels: List[PixelPoint],
+    heading: float,
+) -> tuple[str, List[PixelPoint]]:
+    normalized_heading = heading % 360
+    if not normalized_heading:
+        return image_path, marker_pixels
+
+    with Image.open(image_path) as img:
+        original_size = img.size
+        has_alpha = "A" in img.getbands()
+        base = img.convert("RGBA" if has_alpha else "RGB")
+        fill = (0, 0, 0, 0) if has_alpha else (0, 0, 0)
+        rotated = base.rotate(
+            normalized_heading,
+            resample=Image.Resampling.BICUBIC,
+            expand=True,
+            fillcolor=fill,
+        )
+        rotated_size = rotated.size
+        rotated_path = _save_rotated_custom_map_image(rotated, image_path)
+
+    rotated_markers = _rotate_custom_marker_pixels(
+        marker_pixels,
+        original_size,
+        normalized_heading,
+        rotated_size,
+    )
+    return rotated_path, rotated_markers
+
+
+def _rotate_map_for_export(
+    map_image: Image.Image,
+    base_width: int,
+    base_height: int,
+    heading: float,
+) -> tuple[Image.Image, float, float]:
+    if not heading:
+        return map_image, 0.0, 0.0
+    rotated = map_image.rotate(
+        heading,
+        resample=Image.Resampling.BICUBIC,
+        expand=True,
+        center=(base_width / 2, base_height / 2),
+        fillcolor=(0, 0, 0),
+    )
+    expand_left = (rotated.size[0] - base_width) / 2
+    expand_top = (rotated.size[1] - base_height) / 2
+    return rotated, expand_left, expand_top
+
+
+def _build_marker_pixels(
+    markers: List[Dict[str, Any]],
+    left: float,
+    top: float,
+    base_width: int,
+    base_height: int,
+    heading: float,
+    crop_left: int,
+    crop_top: int,
+    zoom: int,
+) -> List[Any]:
+    pixels: List[PixelPoint] = []
+    center_x = base_width / 2
+    center_y = base_height / 2
+
+    for marker in markers:
+        lat = float(marker.get("latitude", 0.0))
+        lon = float(marker.get("longitude", 0.0))
+        point_x, point_y = _latlon_to_world_pixel(lat, lon, zoom)
+        pixel_x = point_x - left
+        pixel_y = point_y - top
+        rotated_x, rotated_y = _rotate_point(pixel_x, pixel_y, center_x, center_y, heading)
+        rotated_x -= crop_left
+        rotated_y -= crop_top
+        pixels.append(PixelPoint(rotated_x, rotated_y))
+
+    return pixels
+
+
+def _process_single_photo(
+    filepath: str,
+    processor: ImageProcessor,
+    metadata: ImageMetadata,
+    gps: GPSCoordinates,
+    custom_name: str,
+    note: str,
+) -> Dict[str, Any]:
+    """
+    Process a single photo for export (resize, compress, build metadata dict).
+
+    This is the core processing function used by both custom and Google tiles export.
+    Designed to be called in parallel using ThreadPoolExecutor.
+    """
+    image_data, filename = processor.process_image(filepath)
+    display_name = custom_name if custom_name else metadata.filename
+
+    return {
+        "filepath": filepath,
+        "filename": filename,
+        "display_name": display_name,
+        "custom_name": custom_name,
+        "note": note,
+        "image_data": image_data,
+        "gps": gps,
+        "timestamp": metadata.timestamp,
+    }
+
+
+def _process_custom_export(
+    state: AppState,
+    markers: List[Dict[str, Any]],
+    compression_quality: int,
+    max_workers: int = 4,
+) -> tuple[List[Dict[str, Any]], List[PixelPoint]]:
+    """
+    Process photos for custom map export with parallel image processing.
+    """
+    processor = ImageProcessor(
+        compression_quality=compression_quality,
+        max_dimension=1920,
+    )
+
+    # Validate all markers first before processing
+    validated_items = []
+    for item in markers:
+        filepath = item.get("filepath")
+        if not filepath:
+            raise ValueError("Custom marker missing filepath.")
+        metadata = state.file_metadata.get(filepath)
+        if not metadata:
+            raise ValueError(f"Missing photo metadata for {Path(filepath).name}.")
+        x = item.get("x")
+        y = item.get("y")
+        if x is None or y is None:
+            raise ValueError(f"Missing custom placement for {Path(filepath).name}.")
+
+        gps = metadata.gps or GPSCoordinates(latitude=0.0, longitude=0.0, altitude=None)
+        custom_name = state.photo_aliases.get(filepath, "")
+        note = state.photo_notes.get(filepath, "")
+
+        validated_items.append({
+            "filepath": filepath,
+            "metadata": metadata,
+            "gps": gps,
+            "custom_name": custom_name,
+            "note": note,
+            "x": x,
+            "y": y,
+        })
+
+    # Process photos in parallel
+    results_map: Dict[str, Dict[str, Any]] = {}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(
+                _process_single_photo,
+                item["filepath"],
+                processor,
+                item["metadata"],
+                item["gps"],
+                item["custom_name"],
+                item["note"],
+            ): item["filepath"]
+            for item in validated_items
+        }
+
+        for future in as_completed(futures):
+            filepath = futures[future]
+            results_map[filepath] = future.result()
+
+    # Build output in original marker order
+    processed_photos: List[Dict[str, Any]] = []
+    marker_pixels: List[PixelPoint] = []
+
+    for item in validated_items:
+        processed_photos.append(results_map[item["filepath"]])
+        marker_pixels.append(PixelPoint(float(item["x"]), float(item["y"])))
+
+    return processed_photos, marker_pixels
+
+
+def _process_photos(
+    state: AppState,
+    marker_overrides: List[Dict[str, Any]],
+    compression_quality: int,
+    max_workers: int = 4,
+) -> List[Dict[str, Any]]:
+    """
+    Process photos for Google tiles export with parallel image processing.
+    """
+    override_map = {
+        item.get("filepath"): item
+        for item in marker_overrides
+        if item.get("filepath")
+    }
+
+    processor = ImageProcessor(
+        compression_quality=compression_quality,
+        max_dimension=1920,
+    )
+
+    # Prepare items for processing
+    items_to_process = []
+    for filepath in state.selected_files:
+        metadata = state.file_metadata.get(filepath)
+        if not metadata:
+            continue
+
+        override = override_map.get(filepath)
+        gps = metadata.gps
+
+        if not gps and not override:
+            continue
+
+        # Compute final GPS (apply override if present)
+        if override:
+            base_gps = metadata.gps
+            gps = GPSCoordinates(
+                latitude=override.get("latitude", base_gps.latitude if base_gps else 0.0),
+                longitude=override.get("longitude", base_gps.longitude if base_gps else 0.0),
+                altitude=override.get("altitude", base_gps.altitude if base_gps else None),
+            )
+
+        custom_name = state.photo_aliases.get(filepath, "")
+        note = state.photo_notes.get(filepath, "")
+
+        items_to_process.append({
+            "filepath": filepath,
+            "metadata": metadata,
+            "gps": gps,
+            "custom_name": custom_name,
+            "note": note,
+        })
+
+    # Process photos in parallel
+    results_map: Dict[str, Dict[str, Any]] = {}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(
+                _process_single_photo,
+                item["filepath"],
+                processor,
+                item["metadata"],
+                item["gps"],
+                item["custom_name"],
+                item["note"],
+            ): item["filepath"]
+            for item in items_to_process
+        }
+
+        for future in as_completed(futures):
+            filepath = futures[future]
+            results_map[filepath] = future.result()
+
+    # Build output in original file order
+    processed_photos: List[Dict[str, Any]] = []
+    for item in items_to_process:
+        processed_photos.append(results_map[item["filepath"]])
+
+    return processed_photos
+
+
+def main() -> None:
+    if sys.platform == "win32":
+        try:
+            import clr  # type: ignore
+        except Exception as exc:
+            raise SystemExit(
+                "pywebview requires pythonnet on Windows. "
+                "Install it with: pip install pythonnet"
+            ) from exc
+
+    overrides_path = CONFIG_DIR / "map_overrides.json"
+    (
+        marker_size,
+        heading,
+        custom_heading,
+        overrides,
+        custom_map_path,
+        custom_markers,
+        custom_autoplot_enabled,
+        photo_aliases,
+        group_aliases,
+        photo_notes,
+        group_assignments,
+    ) = _load_overrides(overrides_path)
+
+    state = AppState(
+        selected_files=[],
+        file_metadata={},
+        gps_overrides=overrides,
+        custom_map_path=custom_map_path,
+        custom_marker_overrides=custom_markers,
+        custom_autoplot_enabled=custom_autoplot_enabled,
+        marker_size=marker_size,
+        heading=heading,
+        custom_heading=custom_heading,
+        output_folder=None,
+        overrides_path=overrides_path,
+        group_assignments=group_assignments,
+        photo_aliases=photo_aliases,
+        group_aliases=group_aliases,
+        photo_notes=photo_notes,
+        photo_previews={},
+    )
+
+    html = _build_html(state)
+    html_path = _write_html_file(html)
+
+    api = AppApi(state)
+
+    def handle_closing(_window=None) -> None:
+        api.on_closing()
+        try:
+            Path(html_path).unlink()
+        except OSError:
+            pass
+
+    icon_path = get_window_icon_path()
+    try:
+        create_kwargs = dict(
+            title="PicPlotter Auto",
+            url=html_path,
+            width=1200,
+            height=820,
+            resizable=True,
+            js_api=api,
+        )
+        if icon_path:
+            create_kwargs["icon"] = icon_path
+        window = webview.create_window(**create_kwargs)
+    except TypeError:
+        window = webview.create_window(
+            "PicPlotter Auto",
+            url=html_path,
+            width=1200,
+            height=820,
+            resizable=True,
+            js_api=api,
+        )
+    if icon_path and hasattr(window, "icon"):
+        try:
+            window.icon = icon_path
+        except Exception:
+            pass
+    api.attach_window(window)
+    window.events.closing += handle_closing
+
+    def apply_window_icon() -> None:
+        set_window_icon("PicPlotter Auto", icon_path)
+
+    webview.start(apply_window_icon)
+
+
+if __name__ == "__main__":
+    main()

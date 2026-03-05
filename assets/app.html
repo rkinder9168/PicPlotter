@@ -1,0 +1,4727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PicPlotter Auto</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0f1714;
+            --panel: #141f1c;
+            --panel-border: #24312b;
+            --text: #f1f1f1;
+            --muted: #b4beb9;
+            --accent: #2a9d6e;
+            --accent-dark: #238b5f;
+            --accent-alt: #f6d11a;
+            --warning: #f6d11a;
+            --error: #e54d4d;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: "Segoe UI", sans-serif;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        header {
+            display: grid;
+            grid-template-columns: 1fr;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--panel-border);
+            background: #0c1412;
+            gap: 12px;
+        }
+
+        header.editor-active {
+            grid-template-columns: 1fr auto 1fr;
+        }
+
+        header .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        header .title {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        header .subtitle {
+            font-size: 12px;
+            color: var(--muted);
+            margin-left: 0;
+        }
+
+        header .header-center {
+            justify-self: center;
+            font-size: 16px;
+            font-weight: 700;
+            display: none;
+        }
+
+        header .header-actions {
+            justify-self: end;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: nowrap;
+        }
+
+        header.editor-active .header-center {
+            display: block;
+        }
+
+        header.editor-active .header-actions {
+            display: flex;
+        }
+
+
+        #views {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .view {
+            position: absolute;
+            inset: 0;
+            display: none;
+            flex-direction: column;
+        }
+
+        .view.active {
+            display: flex;
+        }
+
+        #main-view {
+            padding: 18px 20px 20px;
+            gap: 16px;
+            min-height: 0;
+        }
+
+        #main-body {
+            display: grid;
+            grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+            gap: 16px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        #side-panels {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-height: 0;
+        }
+
+        #groups-panel {
+            flex: 0.8;
+            min-height: 0;
+        }
+
+        #options-panel {
+            flex: 1.2;
+            min-height: 0;
+            overflow: auto;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .icon-button {
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            border-radius: 999px;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .panel {
+            background: rgba(9, 14, 12, 0.6);
+            border: 1px solid var(--panel-border);
+            padding: 14px;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-height: 0;
+        }
+
+        .panel h3 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .panel label {
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .panel input[type="text"],
+        .panel input[type="password"] {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--panel-border);
+            background: #0c1412;
+            color: var(--text);
+        }
+
+        #client-address {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--panel-border);
+            background: #0c1412;
+            color: var(--text);
+            resize: vertical;
+            min-height: 56px;
+        }
+
+        .panel input[disabled] {
+            color: var(--muted);
+        }
+
+        .settings-toggle {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 4px 0;
+        }
+
+        .settings-toggle:hover {
+            color: var(--text);
+        }
+
+        .settings-toggle .arrow {
+            font-size: 10px;
+            transition: transform 0.2s ease;
+        }
+
+        .settings-toggle.expanded .arrow {
+            transform: rotate(90deg);
+        }
+
+        .settings-content {
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            padding-top: 8px;
+        }
+
+        .settings-content.expanded {
+            display: flex;
+        }
+
+        .panel input[type="range"] {
+            width: 100%;
+        }
+
+        .actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .mode-toggle button.active {
+            background: var(--accent);
+            color: #0b0f0d;
+            font-weight: 700;
+        }
+
+        .mode-toggle button.active:disabled {
+            background: var(--accent-dark);
+            color: #0b0f0d;
+            opacity: 0.6;
+        }
+
+        button {
+            border: 1px solid transparent;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            background: #1b2b26;
+            color: var(--text);
+            transition: background 0.15s ease, border 0.15s ease;
+        }
+
+        button:hover {
+            background: #22352f;
+        }
+
+        button.primary {
+            background: var(--accent);
+            color: #0b0f0d;
+            font-weight: 700;
+        }
+
+        button.primary:hover {
+            background: var(--accent-dark);
+        }
+
+        button.secondary {
+            background: transparent;
+            border: 1px solid var(--panel-border);
+        }
+
+        button.accent {
+            background: var(--accent-alt);
+            color: #1a1a1a;
+            font-weight: 700;
+        }
+
+        button.danger {
+            background: var(--error);
+            color: #0b0f0d;
+            font-weight: 700;
+        }
+
+        button.danger:hover {
+            background: #d64545;
+        }
+
+        button:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        #file-list {
+            border: 1px solid var(--panel-border);
+            border-radius: 10px;
+            background: #0f1714;
+            padding: 6px;
+            overflow: auto;
+            min-height: 0;
+        }
+
+        #groups-list {
+            border: 1px solid var(--panel-border);
+            border-radius: 10px;
+            background: #0f1714;
+            padding: 6px;
+            overflow: auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            row-gap: 6px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--muted);
+            cursor: pointer;
+            flex-wrap: nowrap;
+            min-width: 0;
+        }
+
+        .file-thumb {
+            width: 38px;
+            height: 38px;
+            border-radius: 6px;
+            border: 1px solid var(--panel-border);
+            background: #0c1412;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .file-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .group-dot {
+            width: 22.5px;
+            height: 22.5px;
+            border-radius: 50%;
+            border: 1px dashed var(--panel-border);
+            background: #ffffff;
+            flex-shrink: 0;
+            cursor: pointer;
+            position: relative;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            margin-left: auto;
+        }
+
+        .group-dot::after {
+            content: "";
+            position: absolute;
+            right: -3.5px;
+            bottom: -3.5px;
+            width: 7.5px;
+            height: 7.5px;
+            border-radius: 50%;
+            border: 1px solid var(--accent);
+            background: #0c1412;
+        }
+
+        .group-dot:hover {
+            transform: scale(1.06);
+            box-shadow: 0 0 0 2px rgba(42, 157, 110, 0.35);
+        }
+
+        .group-dot.default {
+            color: #333333;
+            font-size: 12.5px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .file-item.has-gps {
+            color: var(--text);
+        }
+
+        .file-item.has-manual {
+            color: var(--text);
+        }
+
+        .file-item:hover {
+            background: rgba(34, 53, 47, 0.6);
+        }
+
+        .file-item.selected {
+            background: rgba(42, 157, 110, 0.18);
+            color: var(--text);
+        }
+
+        .group-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--text);
+            font-size: 12px;
+        }
+
+        .group-item:hover {
+            background: rgba(34, 53, 47, 0.6);
+        }
+
+        .group-item.selected {
+            background: var(--accent);
+            color: #0b0f0d;
+        }
+
+        .group-swatch {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px dashed var(--panel-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 700;
+            color: #333333;
+            flex-shrink: 0;
+            cursor: pointer;
+            position: relative;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .group-swatch::after {
+            content: "";
+            position: absolute;
+            right: -3px;
+            bottom: -3px;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            border: 1px solid var(--accent);
+            background: #0c1412;
+        }
+
+        .group-swatch:hover {
+            transform: scale(1.06);
+            box-shadow: 0 0 0 2px rgba(42, 157, 110, 0.35);
+        }
+
+        .group-name {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .group-count {
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        .group-item.selected .group-count {
+            color: rgba(11, 15, 13, 0.75);
+        }
+
+        .group-name-input {
+            width: 100%;
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--panel-border);
+            background: #0c1412;
+            color: var(--text);
+            font-size: 12px;
+        }
+
+        .file-rename-input,
+        .group-rename-input {
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--panel-border);
+            background: #0c1412;
+            color: var(--text);
+            font-size: 11px;
+            flex: 0 0 170px;
+            min-width: 120px;
+            max-width: 180px;
+        }
+
+        .file-rename-input {
+            flex-basis: 220px;
+            max-width: 240px;
+        }
+
+        .file-note-input {
+            padding: 6px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--panel-border);
+            background: #0c1412;
+            color: var(--text);
+            font-size: 11px;
+            flex: 1 1 240px;
+            width: auto;
+            min-height: 30px;
+            resize: vertical;
+        }
+
+        .file-rename-input::placeholder,
+        .group-rename-input::placeholder,
+        .file-note-input::placeholder {
+            color: var(--muted);
+        }
+
+        .gps-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 36px;
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            font-family: "Consolas", monospace;
+            color: var(--muted);
+            border: 1px solid transparent;
+        }
+
+        .photo-index {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 22px;
+            padding: 2px 4px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            font-family: "Consolas", monospace;
+            color: var(--muted);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .file-item.has-gps .gps-badge {
+            color: #0b0f0d;
+            background: var(--accent);
+        }
+
+        .file-item.has-manual .gps-badge {
+            color: #1a1a1a;
+            background: var(--accent-alt);
+        }
+
+        .file-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .value {
+            font-size: 13px;
+            color: var(--text);
+        }
+
+        #custom-image-name {
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+
+        #photo-preview {
+            position: fixed;
+            display: none;
+            pointer-events: none;
+            z-index: 1200;
+            padding: 6px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(12, 20, 18, 0.95);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+            max-width: 450px;
+            max-height: 450px;
+        }
+
+        #photo-preview img {
+            display: block;
+            max-width: 425px;
+            max-height: 425px;
+            width: auto;
+            height: auto;
+            border-radius: 8px;
+        }
+
+        .hint {
+            font-size: 11px;
+            color: var(--muted);
+            line-height: 1.4;
+        }
+
+        /* Editor styles */
+        #editor-view {
+            padding: 0;
+            background: var(--bg);
+        }
+
+        #editor-shell {
+            flex: 1;
+            display: flex;
+            min-height: 0;
+        }
+
+        #editor-sidebar {
+            width: 320px;
+            background: var(--panel);
+            border-right: 1px solid var(--panel-border);
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        #editor-map {
+            flex: 1;
+            min-width: 0;
+            position: relative;
+            background: radial-gradient(circle at top, #101a17 0%, #0b0f0d 60%);
+        }
+
+        #editor-viewport {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            cursor: grab;
+            user-select: none;
+        }
+
+        #editor-viewport.dragging {
+            cursor: grabbing;
+        }
+
+        #editor-viewport.calibrating {
+            cursor: crosshair;
+        }
+
+        #editor-viewport.calibrating.dragging {
+            cursor: grabbing;
+        }
+
+        #editor-tile-layer {
+            position: absolute;
+            left: 0;
+            top: 0;
+            transform-origin: center center;
+            will-change: transform;
+            pointer-events: none;
+        }
+
+        #editor-tile-layer img.tile {
+            position: absolute;
+            width: 256px;
+            height: 256px;
+            image-rendering: auto;
+            user-select: none;
+            -webkit-user-drag: none;
+            pointer-events: none;
+        }
+
+        #editor-custom-image {
+            width: 100%;
+            height: 100%;
+            display: block;
+            user-select: none;
+            -webkit-user-drag: none;
+            pointer-events: none;
+        }
+
+        #editor-marker-layer {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        #editor-photo-panel {
+            flex: 1;
+            min-height: 0;
+        }
+
+        #editor-photo-list {
+            border: 1px solid var(--panel-border);
+            border-radius: 10px;
+            background: #0f1714;
+            padding: 6px;
+            overflow: auto;
+            min-height: 140px;
+            flex: 1;
+        }
+
+        .editor-photo-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--muted);
+            cursor: pointer;
+        }
+
+        .editor-photo-item.placed {
+            color: var(--text);
+        }
+
+        .editor-photo-item.selected {
+            background: rgba(42, 157, 110, 0.18);
+            color: var(--text);
+        }
+
+        .editor-photo-badge {
+            min-width: 26px;
+            text-align: center;
+            font-family: "Consolas", monospace;
+            font-weight: 700;
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        .editor-photo-meta {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .editor-photo-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .editor-photo-status {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+
+        .marker {
+            position: absolute;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            transform: translate(-50%, -50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            cursor: grab;
+        }
+
+        .marker.plot-locked {
+            pointer-events: none;
+            opacity: 0.86;
+        }
+
+        .marker.dragging {
+            cursor: grabbing;
+        }
+
+        .marker span {
+            font-weight: 700;
+            color: #111111;
+            text-shadow: 0 1px 1px rgba(255, 255, 255, 0.35);
+        }
+
+        .popup-menu {
+            position: fixed;
+            background: #0c1412;
+            border: 1px solid var(--panel-border);
+            border-radius: 10px;
+            padding: 6px;
+            min-width: 160px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+            display: none;
+            z-index: 2100;
+        }
+
+        .popup-menu.active {
+            display: block;
+        }
+
+        .popup-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--text);
+            cursor: pointer;
+        }
+
+        .popup-item:hover {
+            background: rgba(34, 53, 47, 0.6);
+        }
+
+        .popup-swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 1px solid var(--panel-border);
+            background: #ffffff;
+            flex-shrink: 0;
+        }
+
+        .color-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .color-swatch {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid var(--panel-border);
+            cursor: pointer;
+        }
+
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(5, 8, 7, 0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        .modal-backdrop.active {
+            display: flex;
+        }
+
+        .modal-card {
+            background: #0c1412;
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            padding: 16px;
+            width: min(420px, 90vw);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .modal-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin: 0 0 8px;
+        }
+
+        .modal-message {
+            font-size: 12px;
+            color: var(--muted);
+            margin: 0 0 14px;
+            line-height: 1.5;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        #map-source-modal .modal-actions {
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <header id="app-header">
+            <div class="header-left">
+                <div class="title">PicPlotter Auto</div>
+                <div class="subtitle">Single-window map workflow</div>
+            </div>
+            <div id="editor-title" class="header-center">Map Editor</div>
+            <div id="editor-actions" class="header-actions">
+                <button id="close-editor" class="secondary">Back to Home</button>
+                <button id="reset-editor" class="danger">Reset</button>
+            </div>
+        </header>
+
+        <div id="views">
+            <section id="main-view" class="view active">
+                <div id="main-body">
+                    <div id="files-panel" class="panel">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <div style="display:flex;align-items:center;gap:12px;">
+                                <div class="actions">
+                                    <button id="select-all-photos" class="secondary">Select All</button>
+                                    <button id="deselect-photos" class="secondary">Deselect</button>
+                                </div>
+                                <h3>Photos</h3>
+                            </div>
+                            <div class="actions">
+                                <button id="select-photos" class="primary">Import Photos</button>
+                                <button id="delete-photos" class="secondary">Delete</button>
+                                <button id="clear-photos" class="secondary">Clear All</button>
+                            </div>
+                        </div>
+                        <div id="file-count" class="hint">No photos selected</div>
+                        <div id="file-list"></div>
+                    </div>
+
+                    <div id="side-panels">
+                        <div id="groups-panel" class="panel">
+                            <div class="panel-header">
+                                <h3>Groups</h3>
+                                <div class="actions">
+                                    <button id="delete-group" class="secondary icon-button" title="Delete group">-</button>
+                                    <button id="add-group" class="secondary icon-button" title="Add group">+</button>
+                                </div>
+                            </div>
+                            <div id="group-hint" class="hint">Assign a group using the dot next to a photo.</div>
+                            <div id="groups-list"></div>
+                        </div>
+
+                        <div id="options-panel" class="panel">
+                            <h3>Options</h3>
+
+                            <div>
+                                <div id="settings-toggle" class="settings-toggle">
+                                    <span class="arrow">▶</span>
+                                    <span>Settings</span>
+                                </div>
+                                <div id="settings-content" class="settings-content">
+                                    <div>
+                                        <label>Google Maps API Key (Optional)</label>
+                                        <div style="display:flex;gap:8px;align-items:center;">
+                                            <input id="api-key" type="password" placeholder="Enter API key">
+                                            <button id="save-api-key" class="secondary">Save</button>
+                                        </div>
+                                        <div class="hint">Used only for tile preview and export fetches.</div>
+                                    </div>
+
+                                    <div>
+                                        <label>Netlify Token (for Deploy to Web)</label>
+                                        <div style="display:flex;gap:8px;align-items:center;">
+                                            <input id="netlify-token" type="password" placeholder="Enter Netlify token">
+                                            <button id="save-netlify-token" class="secondary">Save</button>
+                                        </div>
+                                        <div id="netlify-token-status" class="hint">Get token at app.netlify.com/user/applications/personal</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label>Project Name</label>
+                                <input id="project-name" type="text" value="Interactive Image">
+                            </div>
+
+                            <div>
+                                <label>Proposal Link</label>
+                                <input id="proposal-link" type="text">
+                                <div class="hint">Optional</div>
+                            </div>
+
+                            <div>
+                                <label>Client</label>
+                                <input id="client-name" type="text">
+                            </div>
+
+                            <div>
+                                <label>Company</label>
+                                <input id="client-company" type="text">
+                            </div>
+
+                            <div>
+                                <label>Address</label>
+                                <textarea id="client-address" rows="2"></textarea>
+                                <div class="hint">Optional</div>
+                            </div>
+
+                            <div>
+                                <label>Image Quality</label>
+                                <input id="quality" type="range" min="25" max="100" value="30">
+                                <div id="quality-value" class="value">30%</div>
+                            </div>
+
+                            <div>
+                                <label>Output Folder</label>
+                                <div style="display:flex;gap:8px;align-items:center;">
+                                    <input id="output-folder" type="text" disabled value="(Default - same as photos)">
+                                    <button id="browse-output" class="secondary">Browse</button>
+                                    <button id="reset-output" class="secondary">Reset</button>
+                                </div>
+                            </div>
+
+                            <div class="actions">
+                                <button id="create-kmz" class="primary">Create KMZ</button>
+                                <button id="open-editor" class="accent">Create Interactive Image</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="editor-view" class="view">
+                <div id="editor-shell">
+                    <aside id="editor-sidebar">
+                        <div id="editor-photo-panel" class="panel" style="gap:10px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <label>Photos</label>
+                                <div id="editor-photo-count" class="hint"></div>
+                            </div>
+                            <div id="editor-photo-list"></div>
+                            <div id="editor-photo-hint" class="hint"></div>
+                        </div>
+
+                        <div id="custom-image-panel" class="panel" style="gap:10px;display:none;">
+                            <label>Custom Image</label>
+                            <div id="custom-image-name" class="value">No image selected</div>
+                            <div class="actions">
+                                <button id="custom-image-select" class="secondary">Choose Image</button>
+                            </div>
+                        </div>
+
+                        <div id="editor-mode-panel" class="panel" style="gap:10px;">
+                            <label>Mode</label>
+                            <div class="actions mode-toggle">
+                                <button id="mode-plot" class="secondary">Calibrate</button>
+                                <button id="mode-adjust" class="secondary">Manual</button>
+                            </div>
+                            <div id="custom-autoplot-status" class="hint"></div>
+                            <div id="mode-hint" class="hint"></div>
+                        </div>
+
+                        <div class="panel" style="gap:10px;">
+                            <label>Marker Size</label>
+                            <input id="editor-marker-size" type="range" min="24" max="248" value="96">
+                            <div id="editor-marker-size-value" class="value">96px</div>
+                        </div>
+
+                        <div id="editor-rotation-panel" class="panel" style="gap:10px;">
+                            <label>Map Rotation</label>
+                            <input id="editor-rotation" type="range" min="0" max="360" value="0">
+                            <div id="editor-rotation-value" class="value">0deg</div>
+                            <div class="actions">
+                                <button id="rotate-left">Rotate -90</button>
+                                <button id="rotate-right">Rotate +90</button>
+                            </div>
+                        </div>
+
+                        <div class="panel actions">
+                            <button id="zoom-in">Zoom +</button>
+                            <button id="zoom-out">Zoom -</button>
+                            <button id="fit">Fit</button>
+                        </div>
+
+                        <div class="panel">
+                            <button id="export-html" class="primary">Export Interactive Image</button>
+                            <button id="deploy-web" class="accent" style="margin-top:8px;">Deploy to Web</button>
+                        </div>
+
+                        <div id="deploy-result" class="panel" style="display:none;">
+                            <label>Deployed URL</label>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input id="deploy-url" type="text" readonly style="flex:1;">
+                                <button id="copy-url" class="secondary">Copy</button>
+                            </div>
+                            <div class="hint">Share this link with your client</div>
+                        </div>
+
+                        <div id="editor-status" class="hint"></div>
+                    </aside>
+
+                    <main id="editor-map">
+                        <div id="editor-viewport">
+                            <div id="editor-tile-layer"></div>
+                            <div id="editor-marker-layer"></div>
+                        </div>
+                    </main>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div id="confirm-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-card">
+            <div id="confirm-title" class="modal-title">Confirm</div>
+            <div id="confirm-message" class="modal-message"></div>
+            <div class="modal-actions">
+                <button id="confirm-cancel" class="secondary">Cancel</button>
+                <button id="confirm-accept" class="primary">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="map-source-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-card">
+            <div class="modal-title">Choose interactive image background.</div>
+            <div class="modal-message">
+                Select Auto for a satellite image and auto plot, or select Custom to load a background image and plot manually.
+            </div>
+            <div class="modal-actions">
+                <button id="map-source-tiles" class="primary">Auto</button>
+                <button id="map-source-custom" class="accent">Custom</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="group-picker" class="popup-menu" role="menu" aria-hidden="true"></div>
+    <div id="color-picker" class="popup-menu" role="menu" aria-hidden="true"></div>
+    <div id="photo-preview" aria-hidden="true">
+        <img id="photo-preview-img" alt="Photo preview">
+    </div>
+
+    <script>
+        const INITIAL_STATE = __INITIAL_STATE__;
+        const MARKER_ICON = "__MARKER_ICON__";
+        const EXPORT_MAX_DIM = __EXPORT_MAX_DIM__;
+        const TILE_SIZE = 256;
+        const MIN_ZOOM = 2;
+        const MAX_ZOOM = 21;
+        const CUSTOM_MIN_ZOOM = 0.1;
+        const CUSTOM_MAX_ZOOM = 8;
+        const CUSTOM_ZOOM_STEP = 1.2;
+        const CUSTOM_CALIBRATION_MIN_POINTS = 5;
+        const MAP_SOURCE_TILES = "tiles";
+        const MAP_SOURCE_CUSTOM = "custom";
+        const MODE_PLOT = "plot";
+        const MODE_ADJUST = "adjust";
+
+        const state = {
+            photos: [],
+            gpsCount: 0,
+            placedCount: 0,
+            apiKey: INITIAL_STATE.api_key || "",
+            markerSize: INITIAL_STATE.marker_size || 96,
+            heading: INITIAL_STATE.heading || 0,
+            outputFolder: null,
+            groups: [],
+            presetColors: [],
+            markerImages: {},
+            selectedGroupId: null
+        };
+
+        const fileSelection = {
+            paths: new Set(),
+            lastPath: null
+        };
+
+        const appHeader = document.getElementById("app-header");
+        const mainView = document.getElementById("main-view");
+        const editorView = document.getElementById("editor-view");
+        const fileListEl = document.getElementById("file-list");
+        const fileCountEl = document.getElementById("file-count");
+        const groupsListEl = document.getElementById("groups-list");
+        const addGroupBtn = document.getElementById("add-group");
+        const deleteGroupBtn = document.getElementById("delete-group");
+        const groupHintEl = document.getElementById("group-hint");
+        const statusTextEl = document.getElementById("status-text");
+        const progressFillEl = document.getElementById("progress-fill");
+        const apiKeyInput = document.getElementById("api-key");
+        const saveApiKeyBtn = document.getElementById("save-api-key");
+        const netlifyTokenInput = document.getElementById("netlify-token");
+        const saveNetlifyTokenBtn = document.getElementById("save-netlify-token");
+        const netlifyTokenStatus = document.getElementById("netlify-token-status");
+        const deployWebBtn = document.getElementById("deploy-web");
+        const deployResultPanel = document.getElementById("deploy-result");
+        const deployUrlInput = document.getElementById("deploy-url");
+        const copyUrlBtn = document.getElementById("copy-url");
+        const projectNameInput = document.getElementById("project-name");
+        const proposalLinkInput = document.getElementById("proposal-link");
+        const clientNameInput = document.getElementById("client-name");
+        const clientCompanyInput = document.getElementById("client-company");
+        const clientAddressInput = document.getElementById("client-address");
+        const qualityInput = document.getElementById("quality");
+        const qualityValue = document.getElementById("quality-value");
+        const outputFolderInput = document.getElementById("output-folder");
+        const createKmzBtn = document.getElementById("create-kmz");
+        const openEditorBtn = document.getElementById("open-editor");
+        const selectAllPhotosBtn = document.getElementById("select-all-photos");
+        const deselectPhotosBtn = document.getElementById("deselect-photos");
+        const deletePhotosBtn = document.getElementById("delete-photos");
+        const clearPhotosBtn = document.getElementById("clear-photos");
+        const confirmModal = document.getElementById("confirm-modal");
+        const confirmTitle = document.getElementById("confirm-title");
+        const confirmMessage = document.getElementById("confirm-message");
+        const confirmCancel = document.getElementById("confirm-cancel");
+        const confirmAccept = document.getElementById("confirm-accept");
+        const mapSourceModal = document.getElementById("map-source-modal");
+        const mapSourceTilesBtn = document.getElementById("map-source-tiles");
+        const mapSourceCustomBtn = document.getElementById("map-source-custom");
+        const customImagePanel = document.getElementById("custom-image-panel");
+        const customImageNameEl = document.getElementById("custom-image-name");
+        const customImageSelectBtn = document.getElementById("custom-image-select");
+        const editorModePanel = document.getElementById("editor-mode-panel");
+        const customAutoplotStatus = document.getElementById("custom-autoplot-status");
+        const resetEditorBtn = document.getElementById("reset-editor");
+        const groupPickerEl = document.getElementById("group-picker");
+        const colorPickerEl = document.getElementById("color-picker");
+        const photoPreviewEl = document.getElementById("photo-preview");
+        const photoPreviewImg = document.getElementById("photo-preview-img");
+
+        qualityValue.textContent = `${qualityInput.value}%`;
+
+        function setStatus(message, isWarning) {
+            if (!statusTextEl) {
+                return;
+            }
+            statusTextEl.textContent = message || "";
+            statusTextEl.style.color = isWarning ? "var(--warning)" : "var(--muted)";
+        }
+
+        function setProgress(value) {
+            if (!progressFillEl) {
+                return;
+            }
+            const pct = Math.max(0, Math.min(1, value || 0));
+            progressFillEl.style.width = `${Math.round(pct * 100)}%`;
+        }
+
+        let previewAnchor = { x: 0, y: 0 };
+
+        function updatePreviewAnchor(event) {
+            previewAnchor = { x: event.clientX, y: event.clientY };
+        }
+
+        function positionPhotoPreview() {
+            if (!photoPreviewEl || photoPreviewEl.style.display === "none") {
+                return;
+            }
+            const padding = 16;
+            const rect = photoPreviewEl.getBoundingClientRect();
+            let left = previewAnchor.x + padding;
+            let top = previewAnchor.y + padding;
+            if (left + rect.width > window.innerWidth - 8) {
+                left = previewAnchor.x - rect.width - padding;
+            }
+            if (top + rect.height > window.innerHeight - 8) {
+                top = previewAnchor.y - rect.height - padding;
+            }
+            left = Math.max(8, Math.min(left, window.innerWidth - rect.width - 8));
+            top = Math.max(8, Math.min(top, window.innerHeight - rect.height - 8));
+            photoPreviewEl.style.left = `${left}px`;
+            photoPreviewEl.style.top = `${top}px`;
+        }
+
+        function showPhotoPreview(event, photo) {
+            if (!photoPreviewEl || !photoPreviewImg) {
+                return;
+            }
+            if (!photo || !photo.preview_uri) {
+                return;
+            }
+            updatePreviewAnchor(event);
+            if (photoPreviewImg.src !== photo.preview_uri) {
+                photoPreviewImg.src = photo.preview_uri;
+            }
+            photoPreviewEl.style.display = "block";
+            photoPreviewEl.setAttribute("aria-hidden", "false");
+            requestAnimationFrame(positionPhotoPreview);
+        }
+
+        function movePhotoPreview(event) {
+            if (!photoPreviewEl || photoPreviewEl.style.display === "none") {
+                return;
+            }
+            updatePreviewAnchor(event);
+            positionPhotoPreview();
+        }
+
+        function hidePhotoPreview() {
+            if (!photoPreviewEl) {
+                return;
+            }
+            photoPreviewEl.style.display = "none";
+            photoPreviewEl.setAttribute("aria-hidden", "true");
+        }
+
+        if (photoPreviewImg) {
+            photoPreviewImg.addEventListener("load", () => {
+                positionPhotoPreview();
+            });
+        }
+
+        function showConfirm({ title, message, acceptLabel }) {
+            return new Promise((resolve) => {
+                confirmTitle.textContent = title || "Confirm";
+                confirmMessage.textContent = message || "";
+                confirmAccept.textContent = acceptLabel || "Confirm";
+
+                confirmModal.classList.add("active");
+                confirmModal.setAttribute("aria-hidden", "false");
+
+                const cleanup = () => {
+                    confirmModal.classList.remove("active");
+                    confirmModal.setAttribute("aria-hidden", "true");
+                    confirmCancel.removeEventListener("click", onCancel);
+                    confirmAccept.removeEventListener("click", onAccept);
+                    confirmModal.removeEventListener("click", onBackdrop);
+                    document.removeEventListener("keydown", onKeydown);
+                };
+
+                const onCancel = () => {
+                    cleanup();
+                    resolve(false);
+                };
+
+                const onAccept = () => {
+                    cleanup();
+                    resolve(true);
+                };
+
+                const onBackdrop = (event) => {
+                    if (event.target === confirmModal) {
+                        onCancel();
+                    }
+                };
+
+                const onKeydown = (event) => {
+                    if (event.key === "Escape") {
+                        onCancel();
+                    }
+                    if (event.key === "Enter") {
+                        onAccept();
+                    }
+                };
+
+                confirmCancel.addEventListener("click", onCancel);
+                confirmAccept.addEventListener("click", onAccept);
+                confirmModal.addEventListener("click", onBackdrop);
+                document.addEventListener("keydown", onKeydown);
+            });
+        }
+
+        function showMapSourcePicker() {
+            return new Promise((resolve) => {
+                mapSourceModal.classList.add("active");
+                mapSourceModal.setAttribute("aria-hidden", "false");
+
+                const cleanup = () => {
+                    mapSourceModal.classList.remove("active");
+                    mapSourceModal.setAttribute("aria-hidden", "true");
+                    mapSourceTilesBtn.removeEventListener("click", onTiles);
+                    mapSourceCustomBtn.removeEventListener("click", onCustom);
+                    mapSourceModal.removeEventListener("click", onBackdrop);
+                    document.removeEventListener("keydown", onKeydown);
+                };
+
+                const onTiles = () => {
+                    cleanup();
+                    resolve(MAP_SOURCE_TILES);
+                };
+
+                const onCustom = () => {
+                    cleanup();
+                    resolve(MAP_SOURCE_CUSTOM);
+                };
+
+                const onBackdrop = (event) => {
+                    if (event.target === mapSourceModal) {
+                        cleanup();
+                        resolve(null);
+                    }
+                };
+
+                const onKeydown = (event) => {
+                    if (event.key === "Escape") {
+                        cleanup();
+                        resolve(null);
+                    }
+                };
+
+                mapSourceTilesBtn.addEventListener("click", onTiles);
+                mapSourceCustomBtn.addEventListener("click", onCustom);
+                mapSourceModal.addEventListener("click", onBackdrop);
+                document.addEventListener("keydown", onKeydown);
+            });
+        }
+
+        function setView(view) {
+            if (view === "editor") {
+                mainView.classList.remove("active");
+                editorView.classList.add("active");
+            } else {
+                editorView.classList.remove("active");
+                mainView.classList.add("active");
+            }
+            if (appHeader) {
+                appHeader.classList.toggle("editor-active", view === "editor");
+            }
+            closeGroupPicker();
+            closeColorPicker();
+            hidePhotoPreview();
+        }
+
+        let activeGroupPickerPath = null;
+        let activeColorGroupId = null;
+
+        function applyGroupPayload(payload) {
+            if (!payload || payload.status !== "ok") {
+                return;
+            }
+            state.groups = payload.groups || [];
+            state.presetColors = payload.preset_colors || [];
+            state.markerImages = payload.marker_images || {};
+            if (state.selectedGroupId && !state.groups.some((group) => group.id === state.selectedGroupId)) {
+                state.selectedGroupId = null;
+            }
+            if (!state.selectedGroupId && state.groups.length) {
+                const defaultGroup = state.groups.find((group) => group.id === "default");
+                state.selectedGroupId = defaultGroup ? defaultGroup.id : state.groups[0].id;
+            }
+        }
+
+        function getGroupById(groupId) {
+            return state.groups.find((group) => group.id === groupId);
+        }
+
+        function getGroupDisplayName(group) {
+            if (!group) {
+                return "";
+            }
+            return group.display_name || group.name || "";
+        }
+
+        function getPhotoDisplayName(photo) {
+            if (!photo) {
+                return "";
+            }
+            return photo.display_name || photo.filename || "";
+        }
+
+        function syncFileSelection() {
+            if (!state.photos.length) {
+                fileSelection.paths.clear();
+                fileSelection.lastPath = null;
+                return;
+            }
+            const valid = new Set(state.photos.map((photo) => photo.filepath));
+            fileSelection.paths.forEach((path) => {
+                if (!valid.has(path)) {
+                    fileSelection.paths.delete(path);
+                }
+            });
+            if (fileSelection.lastPath && !valid.has(fileSelection.lastPath)) {
+                fileSelection.lastPath = null;
+            }
+        }
+
+        function getSelectedPhotoPaths() {
+            if (!fileSelection.paths.size) {
+                return [];
+            }
+            return state.photos
+                .filter((photo) => fileSelection.paths.has(photo.filepath))
+                .map((photo) => photo.filepath);
+        }
+
+        function getSelectionIndex(path) {
+            if (!path) {
+                return null;
+            }
+            const index = state.photos.findIndex((photo) => photo.filepath === path);
+            return index >= 0 ? index : null;
+        }
+
+        function updateSelectionButtons() {
+            if (!selectAllPhotosBtn || !deselectPhotosBtn || !deletePhotosBtn) {
+                return;
+            }
+            const hasPhotos = state.photos.length > 0;
+            const hasSelection = fileSelection.paths.size > 0;
+            selectAllPhotosBtn.disabled = !hasPhotos;
+            deselectPhotosBtn.disabled = !hasSelection;
+            deletePhotosBtn.disabled = !hasSelection;
+        }
+
+        function updateFileSelectionStyles() {
+            if (!fileListEl) {
+                return;
+            }
+            Array.from(fileListEl.children).forEach((item) => {
+                const path = item.dataset.filepath;
+                if (!path) {
+                    return;
+                }
+                item.classList.toggle("selected", fileSelection.paths.has(path));
+            });
+            updateGroupHint();
+            updateSelectionButtons();
+        }
+
+        function clearFileSelection() {
+            fileSelection.paths.clear();
+            fileSelection.lastPath = null;
+            updateFileSelectionStyles();
+        }
+
+        function selectAllPhotos() {
+            if (!state.photos.length) {
+                return;
+            }
+            fileSelection.paths = new Set(state.photos.map((photo) => photo.filepath));
+            const lastPhoto = state.photos[state.photos.length - 1];
+            fileSelection.lastPath = lastPhoto ? lastPhoto.filepath : null;
+            updateFileSelectionStyles();
+        }
+
+        function handleFileSelectionClick(index, event) {
+            const photo = state.photos[index];
+            if (!photo) {
+                return;
+            }
+            const isShift = event.shiftKey;
+            const isToggle = event.metaKey || event.ctrlKey;
+
+            if (isShift) {
+                const anchorIndex = getSelectionIndex(fileSelection.lastPath);
+                if (anchorIndex !== null) {
+                    const start = Math.min(anchorIndex, index);
+                    const end = Math.max(anchorIndex, index);
+                    if (!isToggle) {
+                        fileSelection.paths.clear();
+                    }
+                    for (let i = start; i <= end; i += 1) {
+                        const target = state.photos[i];
+                        if (target) {
+                            fileSelection.paths.add(target.filepath);
+                        }
+                    }
+                } else if (!isToggle) {
+                    fileSelection.paths.clear();
+                    fileSelection.paths.add(photo.filepath);
+                } else {
+                    fileSelection.paths.add(photo.filepath);
+                }
+            } else if (isToggle) {
+                if (fileSelection.paths.has(photo.filepath)) {
+                    fileSelection.paths.delete(photo.filepath);
+                } else {
+                    fileSelection.paths.add(photo.filepath);
+                }
+            } else {
+                fileSelection.paths.clear();
+                fileSelection.paths.add(photo.filepath);
+            }
+
+            fileSelection.lastPath = photo.filepath;
+            updateFileSelectionStyles();
+        }
+
+        function updateGroupHint() {
+            if (!groupHintEl) {
+                return;
+            }
+            const selectedCount = fileSelection.paths.size;
+            if (selectedCount > 0) {
+                const label = selectedCount === 1 ? "1 photo selected" : `${selectedCount} photos selected`;
+                groupHintEl.textContent = `${label}. Click the dot on a selected photo to assign.`;
+                return;
+            }
+            const selected = getGroupById(state.selectedGroupId);
+            if (selected) {
+                groupHintEl.textContent = `Selected: ${getGroupDisplayName(selected)}. Use the dot to assign.`;
+            } else {
+                groupHintEl.textContent = "Select photos (shift/ctrl) and use the dot to assign.";
+            }
+        }
+
+        function renderGroups() {
+            if (!groupsListEl) {
+                return;
+            }
+            groupsListEl.innerHTML = "";
+            if (!state.groups.length) {
+                updateGroupHint();
+                if (deleteGroupBtn) {
+                    deleteGroupBtn.disabled = true;
+                }
+                return;
+            }
+
+            state.groups.forEach((group) => {
+                const item = document.createElement("div");
+                item.className = "group-item";
+                if (group.id === state.selectedGroupId) {
+                    item.classList.add("selected");
+                }
+                item.addEventListener("click", () => {
+                    state.selectedGroupId = group.id;
+                    renderGroups();
+                });
+
+                const swatch = document.createElement("div");
+                swatch.className = "group-swatch";
+                const swatchColor = group.color === "default" ? "#ffffff" : group.color;
+                swatch.style.background = swatchColor;
+                if (group.color === "default") {
+                    swatch.textContent = "D";
+                }
+                swatch.addEventListener("click", (event) => {
+                    event.stopPropagation();
+                    openColorPicker(group.id, swatch);
+                });
+
+                const name = document.createElement("div");
+                name.className = "group-name";
+                name.textContent = getGroupDisplayName(group);
+
+                const renameInput = document.createElement("input");
+                renameInput.type = "text";
+                renameInput.className = "group-rename-input";
+                renameInput.placeholder = "Optional Group Name";
+                renameInput.value = group.custom_name || "";
+
+                const originalValue = renameInput.value;
+                let skipCommit = false;
+                renameInput.addEventListener("click", (event) => event.stopPropagation());
+                renameInput.addEventListener("keydown", (event) => {
+                    event.stopPropagation();
+                    if (event.key === "Enter") {
+                        event.preventDefault();
+                        renameInput.blur();
+                    }
+                    if (event.key === "Escape") {
+                        event.preventDefault();
+                        skipCommit = true;
+                        renameInput.value = originalValue;
+                        renameInput.blur();
+                    }
+                });
+                renameInput.addEventListener("blur", () => {
+                    if (skipCommit) {
+                        skipCommit = false;
+                        return;
+                    }
+                    const trimmed = renameInput.value.trim();
+                    if (trimmed === originalValue.trim()) {
+                        return;
+                    }
+                    updateGroupDisplayName(group.id, trimmed);
+                });
+                name.addEventListener("dblclick", (event) => {
+                    event.stopPropagation();
+                    renameInput.focus();
+                    renameInput.select();
+                });
+
+                const count = document.createElement("div");
+                count.className = "group-count";
+                count.textContent = String(group.count || 0);
+
+                item.appendChild(swatch);
+                item.appendChild(name);
+                item.appendChild(renameInput);
+                item.appendChild(count);
+                groupsListEl.appendChild(item);
+            });
+
+            updateGroupHint();
+            if (deleteGroupBtn) {
+                const selected = getGroupById(state.selectedGroupId);
+                deleteGroupBtn.disabled = !selected || selected.locked;
+            }
+        }
+
+        async function refreshGroups() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            try {
+                const result = await window.pywebview.api.get_groups();
+                applyGroupPayload(result);
+                renderGroups();
+            } catch (err) {
+                // Ignore group refresh errors.
+            }
+        }
+
+        function closeGroupPicker() {
+            if (!groupPickerEl) {
+                return;
+            }
+            groupPickerEl.classList.remove("active");
+            groupPickerEl.setAttribute("aria-hidden", "true");
+            activeGroupPickerPath = null;
+            document.removeEventListener("click", handleGroupPickerOutside);
+            document.removeEventListener("keydown", handleGroupPickerKeydown);
+        }
+
+        function handleGroupPickerOutside(event) {
+            if (groupPickerEl && !groupPickerEl.contains(event.target)) {
+                closeGroupPicker();
+            }
+        }
+
+        function handleGroupPickerKeydown(event) {
+            if (event.key === "Escape") {
+                closeGroupPicker();
+            }
+        }
+
+        function openGroupPicker(filepath, anchorEl) {
+            if (!groupPickerEl || !state.groups.length) {
+                return;
+            }
+            closeGroupPicker();
+            closeColorPicker();
+            groupPickerEl.innerHTML = "";
+            const targetPaths = fileSelection.paths.has(filepath)
+                ? getSelectedPhotoPaths()
+                : [filepath];
+            state.groups.forEach((group) => {
+                const item = document.createElement("div");
+                item.className = "popup-item";
+                const swatch = document.createElement("div");
+                swatch.className = "popup-swatch";
+                swatch.style.background = group.color === "default" ? "#ffffff" : group.color;
+                const label = document.createElement("div");
+                label.textContent = getGroupDisplayName(group);
+                item.appendChild(swatch);
+                item.appendChild(label);
+                item.addEventListener("click", () => {
+                    assignPhotoGroup(targetPaths, group.id);
+                });
+                groupPickerEl.appendChild(item);
+            });
+
+            const rect = anchorEl.getBoundingClientRect();
+            groupPickerEl.style.left = `${Math.round(rect.left)}px`;
+            groupPickerEl.style.top = `${Math.round(rect.bottom + 6)}px`;
+            groupPickerEl.classList.add("active");
+            groupPickerEl.setAttribute("aria-hidden", "false");
+            activeGroupPickerPath = filepath;
+
+            document.addEventListener("click", handleGroupPickerOutside);
+            document.addEventListener("keydown", handleGroupPickerKeydown);
+        }
+
+        async function assignPhotoGroup(filepaths, groupId) {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            const targets = Array.isArray(filepaths) ? filepaths.filter(Boolean) : [filepaths];
+            if (!targets.length) {
+                return;
+            }
+            closeGroupPicker();
+            try {
+                const result = await window.pywebview.api.assign_photo_group(targets, groupId);
+                if (result && result.status === "ok") {
+                    state.photos = result.photos || [];
+                    if (result.groups) {
+                        state.groups = result.groups || [];
+                    }
+                    renderFileList();
+                    renderGroups();
+                }
+            } catch (err) {
+                // Ignore assignment errors.
+            }
+        }
+
+        async function updatePhotoName(filepath, name) {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            try {
+                const result = await window.pywebview.api.set_photo_name(filepath, name);
+                if (result && result.status === "ok") {
+                    state.photos = result.photos || [];
+                    renderFileList();
+                }
+            } catch (err) {
+                renderFileList();
+            }
+        }
+
+        async function updatePhotoNote(filepath, note) {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            try {
+                const result = await window.pywebview.api.set_photo_note(filepath, note);
+                if (result && result.status === "ok") {
+                    state.photos = result.photos || [];
+                    renderFileList();
+                }
+            } catch (err) {
+                renderFileList();
+            }
+        }
+
+        function closeColorPicker() {
+            if (!colorPickerEl) {
+                return;
+            }
+            colorPickerEl.classList.remove("active");
+            colorPickerEl.setAttribute("aria-hidden", "true");
+            activeColorGroupId = null;
+            document.removeEventListener("click", handleColorPickerOutside);
+            document.removeEventListener("keydown", handleColorPickerKeydown);
+        }
+
+        function handleColorPickerOutside(event) {
+            if (colorPickerEl && !colorPickerEl.contains(event.target)) {
+                closeColorPicker();
+            }
+        }
+
+        function handleColorPickerKeydown(event) {
+            if (event.key === "Escape") {
+                closeColorPicker();
+            }
+        }
+
+        function openColorPicker(groupId, anchorEl) {
+            if (!colorPickerEl || !state.presetColors.length) {
+                return;
+            }
+            closeColorPicker();
+            closeGroupPicker();
+            colorPickerEl.innerHTML = "";
+            const grid = document.createElement("div");
+            grid.className = "color-grid";
+
+            state.presetColors.forEach((preset) => {
+                const swatch = document.createElement("button");
+                swatch.type = "button";
+                swatch.className = "color-swatch";
+                swatch.style.background = preset.hex === "default" ? "#ffffff" : preset.hex;
+                swatch.title = preset.name;
+                swatch.addEventListener("click", () => {
+                    changeGroupColor(groupId, preset.hex);
+                });
+                grid.appendChild(swatch);
+            });
+
+            colorPickerEl.appendChild(grid);
+            const rect = anchorEl.getBoundingClientRect();
+            colorPickerEl.style.left = `${Math.round(rect.left)}px`;
+            colorPickerEl.style.top = `${Math.round(rect.bottom + 6)}px`;
+            colorPickerEl.classList.add("active");
+            colorPickerEl.setAttribute("aria-hidden", "false");
+            activeColorGroupId = groupId;
+
+            document.addEventListener("click", handleColorPickerOutside);
+            document.addEventListener("keydown", handleColorPickerKeydown);
+        }
+
+        async function addGroup() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            try {
+                const existingIds = new Set(state.groups.map((group) => group.id));
+                const result = await window.pywebview.api.add_group("");
+                applyGroupPayload(result);
+                const newGroup = state.groups.find((group) => !existingIds.has(group.id));
+                if (newGroup) {
+                    state.selectedGroupId = newGroup.id;
+                }
+                renderGroups();
+                refreshPhotoList();
+            } catch (err) {
+                // Ignore add errors.
+            }
+        }
+
+        async function deleteGroup() {
+            const selected = getGroupById(state.selectedGroupId);
+            if (!selected || selected.locked) {
+                return;
+            }
+            const ok = await showConfirm({
+                title: "Delete group?",
+                message: `Photos in ${getGroupDisplayName(selected)} will move to Default.`,
+                acceptLabel: "Delete"
+            });
+            if (!ok) {
+                return;
+            }
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            try {
+                const result = await window.pywebview.api.delete_group(selected.id);
+                applyGroupPayload(result);
+                renderGroups();
+                refreshPhotoList();
+            } catch (err) {
+                // Ignore delete errors.
+            }
+        }
+
+        async function changeGroupColor(groupId, color) {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            closeColorPicker();
+            try {
+                const result = await window.pywebview.api.change_group_color(groupId, color);
+                applyGroupPayload(result);
+                renderGroups();
+                refreshPhotoList();
+            } catch (err) {
+                // Ignore color update errors.
+            }
+        }
+
+        async function renameGroup(groupId, name) {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            const trimmed = String(name || "").trim();
+            if (!trimmed) {
+                renderGroups();
+                return;
+            }
+            try {
+                const result = await window.pywebview.api.rename_group(groupId, trimmed);
+                applyGroupPayload(result);
+                renderGroups();
+                refreshPhotoList();
+            } catch (err) {
+                renderGroups();
+            }
+        }
+
+        async function updateGroupDisplayName(groupId, name) {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            try {
+                const result = await window.pywebview.api.set_group_display_name(groupId, name);
+                applyGroupPayload(result);
+                renderGroups();
+                renderFileList();
+            } catch (err) {
+                renderGroups();
+            }
+        }
+
+        function startGroupRename(groupId, nameEl) {
+            const group = getGroupById(groupId);
+            if (!group) {
+                return;
+            }
+            const input = document.createElement("input");
+            input.type = "text";
+            input.className = "group-name-input";
+            input.value = group.name;
+            nameEl.replaceWith(input);
+            input.focus();
+            input.select();
+
+            let finished = false;
+            const finish = (commit) => {
+                if (finished) {
+                    return;
+                }
+                finished = true;
+                if (commit) {
+                    renameGroup(groupId, input.value);
+                } else {
+                    renderGroups();
+                }
+            };
+
+            input.addEventListener("blur", () => finish(true));
+            input.addEventListener("keydown", (event) => {
+                if (event.key === "Enter") {
+                    finish(true);
+                }
+                if (event.key === "Escape") {
+                    finish(false);
+                }
+            });
+        }
+
+        function updateButtons() {
+            const hasPhotos = state.photos.length > 0;
+            clearPhotosBtn.disabled = !hasPhotos;
+            createKmzBtn.disabled = state.placedCount === 0;
+            openEditorBtn.disabled = !hasPhotos;
+            updateSelectionButtons();
+        }
+
+        function autoSizeNoteInput(textarea) {
+            if (!textarea) {
+                return;
+            }
+            textarea.style.height = "auto";
+            textarea.style.height = `${textarea.scrollHeight + 2}px`;
+        }
+
+        function renderFileList() {
+            const scrollTop = fileListEl.scrollTop;
+            fileListEl.innerHTML = "";
+            hidePhotoPreview();
+            closeGroupPicker();
+            syncFileSelection();
+            if (!state.photos.length) {
+                fileCountEl.textContent = "No photos selected";
+                updateButtons();
+                clearFileSelection();
+                return;
+            }
+
+            let gpsCount = 0;
+            let placedCount = 0;
+            state.photos.forEach((photo, index) => {
+                const item = document.createElement("div");
+                const hasGps = Boolean(photo.has_gps);
+                const hasOverride = Boolean(photo.has_override);
+                const isPlaced = hasGps || hasOverride;
+                let className = "file-item";
+                if (hasGps) {
+                    className += " has-gps";
+                } else if (hasOverride) {
+                    className += " has-manual";
+                }
+                item.className = className;
+                item.dataset.filepath = photo.filepath;
+                item.addEventListener("click", (event) => handleFileSelectionClick(index, event));
+
+                const indexBadge = document.createElement("span");
+                indexBadge.className = "photo-index";
+                indexBadge.textContent = String(index + 1);
+
+                const badge = document.createElement("span");
+                badge.className = "gps-badge";
+                if (hasGps) {
+                    badge.textContent = "GPS";
+                } else if (hasOverride) {
+                    badge.textContent = "MANUAL";
+                } else {
+                    badge.textContent = "---";
+                }
+
+                const groupDot = document.createElement("div");
+                groupDot.className = "group-dot";
+                const groupColor = photo.group_color || "default";
+                const group = getGroupById(photo.group_id);
+                groupDot.style.background = groupColor === "default" ? "#ffffff" : groupColor;
+                groupDot.title = group ? getGroupDisplayName(group) : "Default";
+                if (groupColor === "default") {
+                    groupDot.classList.add("default");
+                    groupDot.textContent = "D";
+                }
+                groupDot.addEventListener("click", (event) => {
+                    event.stopPropagation();
+                    openGroupPicker(photo.filepath, groupDot);
+                });
+
+                const thumb = document.createElement("div");
+                thumb.className = "file-thumb";
+                if (photo.preview_uri) {
+                    const thumbImg = document.createElement("img");
+                    thumbImg.src = photo.preview_uri;
+                    thumbImg.alt = photo.filename || "Photo thumbnail";
+                    thumb.appendChild(thumbImg);
+                    thumb.addEventListener("mouseenter", (event) => showPhotoPreview(event, photo));
+                    thumb.addEventListener("mousemove", (event) => movePhotoPreview(event));
+                    thumb.addEventListener("mouseleave", hidePhotoPreview);
+                }
+
+                const name = document.createElement("span");
+                name.className = "file-name";
+                name.textContent = photo.filename;
+
+                const renameInput = document.createElement("input");
+                renameInput.type = "text";
+                renameInput.className = "file-rename-input";
+                renameInput.placeholder = "Optional Photo Name";
+                renameInput.value = photo.custom_name || "";
+
+                const originalValue = renameInput.value;
+                let skipCommit = false;
+                renameInput.addEventListener("click", (event) => event.stopPropagation());
+                renameInput.addEventListener("keydown", (event) => {
+                    event.stopPropagation();
+                    if (event.key === "Enter") {
+                        event.preventDefault();
+                        renameInput.blur();
+                    }
+                    if (event.key === "Escape") {
+                        event.preventDefault();
+                        skipCommit = true;
+                        renameInput.value = originalValue;
+                        renameInput.blur();
+                    }
+                });
+                renameInput.addEventListener("blur", () => {
+                    if (skipCommit) {
+                        skipCommit = false;
+                        return;
+                    }
+                    const trimmed = renameInput.value.trim();
+                    if (trimmed === originalValue.trim()) {
+                        return;
+                    }
+                    updatePhotoName(photo.filepath, trimmed);
+                });
+
+                const noteInput = document.createElement("textarea");
+                noteInput.className = "file-note-input";
+                noteInput.placeholder = "Notes (max 5 lines)";
+                noteInput.rows = 2;
+                noteInput.value = photo.note || "";
+                const originalNote = noteInput.value;
+                let skipNoteCommit = false;
+                noteInput.addEventListener("input", () => {
+                    const lines = noteInput.value.split(/\r?\n/);
+                    if (lines.length > 5) {
+                        noteInput.value = lines.slice(0, 5).join("\n");
+                    }
+                    autoSizeNoteInput(noteInput);
+                });
+                noteInput.addEventListener("click", (event) => event.stopPropagation());
+                noteInput.addEventListener("keydown", (event) => {
+                    event.stopPropagation();
+                    if (event.key === "Escape") {
+                        event.preventDefault();
+                        skipNoteCommit = true;
+                        noteInput.value = originalNote;
+                        noteInput.blur();
+                    }
+                });
+                noteInput.addEventListener("blur", () => {
+                    if (skipNoteCommit) {
+                        skipNoteCommit = false;
+                        return;
+                    }
+                    const trimmed = noteInput.value.trim();
+                    if (trimmed === originalNote.trim()) {
+                        return;
+                    }
+                    updatePhotoNote(photo.filepath, trimmed);
+                });
+
+                item.appendChild(indexBadge);
+                item.appendChild(badge);
+                item.appendChild(thumb);
+                item.appendChild(name);
+                item.appendChild(renameInput);
+                item.appendChild(noteInput);
+                item.appendChild(groupDot);
+                fileListEl.appendChild(item);
+                autoSizeNoteInput(noteInput);
+
+                if (hasGps) {
+                    gpsCount += 1;
+                }
+                if (isPlaced) {
+                    placedCount += 1;
+                }
+            });
+
+            state.gpsCount = gpsCount;
+            state.placedCount = placedCount;
+            fileCountEl.textContent = `${placedCount} of ${state.photos.length} photos placed (GPS: ${gpsCount})`;
+            updateButtons();
+            updateFileSelectionStyles();
+            fileListEl.scrollTop = scrollTop;
+        }
+
+        async function selectPhotos() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            setStatus("Selecting photos...");
+            try {
+                const result = await window.pywebview.api.select_photos();
+                if (result && result.status === "ok") {
+                    state.photos = result.photos || [];
+                    await refreshGroups();
+                    renderFileList();
+                    if (result.warnings && result.warnings.length) {
+                        setStatus(`Loaded with warnings: ${result.warnings[0]}`, true);
+                    } else {
+                        setStatus("Ready");
+                    }
+                } else if (result && result.status === "cancel") {
+                    setStatus("Ready");
+                } else {
+                    const message = result && result.message ? result.message : "Failed to load photos.";
+                    setStatus(message, true);
+                }
+            } catch (err) {
+                setStatus("Failed to load photos.", true);
+            }
+        }
+
+        async function clearPhotos() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            const ok = await showConfirm({
+                title: "Clear selected photos?",
+                message: "This will remove all selected photos and any manual placements.",
+                acceptLabel: "Clear"
+            });
+            if (!ok) {
+                return;
+            }
+            const result = await window.pywebview.api.clear_photos();
+            state.photos = [];
+            state.gpsCount = 0;
+            state.placedCount = 0;
+            applyGroupPayload(result);
+            renderGroups();
+            renderFileList();
+        }
+
+        async function deleteSelectedPhotos() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            const selectedPaths = getSelectedPhotoPaths();
+            if (!selectedPaths.length) {
+                return;
+            }
+            if (selectedPaths.length > 2) {
+                const ok = await showConfirm({
+                    title: "Clear selected photos?",
+                    message: "This will remove all selected photos and any manual placements.",
+                    acceptLabel: "Delete"
+                });
+                if (!ok) {
+                    return;
+                }
+            }
+            const result = await window.pywebview.api.delete_photos(selectedPaths);
+            if (!result || result.status !== "ok") {
+                setStatus(result && result.message ? result.message : "Failed to delete photos.", true);
+                return;
+            }
+            state.photos = result.photos || [];
+            applyGroupPayload(result);
+            clearFileSelection();
+            renderGroups();
+            renderFileList();
+            setStatus("Photos deleted.");
+        }
+
+        async function refreshPhotoList() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            try {
+                const result = await window.pywebview.api.get_photo_list();
+                if (result && result.status === "ok") {
+                    state.photos = result.photos || [];
+                    if (!state.groups.length) {
+                        await refreshGroups();
+                    }
+                    renderFileList();
+                }
+            } catch (err) {
+                // Ignore refresh failures.
+            }
+        }
+
+        let apiKeyLocked = false;
+
+        function setApiKeyLocked(locked) {
+            apiKeyLocked = locked;
+            apiKeyInput.disabled = locked;
+            if (locked) {
+                apiKeyInput.value = "";
+                apiKeyInput.placeholder = "Saved";
+                saveApiKeyBtn.textContent = "Edit";
+                return;
+            }
+            apiKeyInput.value = "";
+            apiKeyInput.placeholder = "Enter API key";
+            saveApiKeyBtn.textContent = "Save";
+        }
+
+        async function saveApiKey() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            if (apiKeyLocked) {
+                setApiKeyLocked(false);
+                apiKeyInput.focus();
+                return;
+            }
+            const value = apiKeyInput.value.trim();
+            await window.pywebview.api.save_api_key(value);
+            state.apiKey = value;
+            setStatus(value ? "API key saved." : "API key cleared.");
+            setApiKeyLocked(Boolean(value));
+        }
+
+        let netlifyTokenLocked = false;
+
+        function setNetlifyTokenLocked(locked) {
+            netlifyTokenLocked = locked;
+            netlifyTokenInput.disabled = locked;
+            if (locked) {
+                netlifyTokenInput.value = "";
+                netlifyTokenInput.placeholder = "Saved";
+                saveNetlifyTokenBtn.textContent = "Edit";
+                return;
+            }
+            netlifyTokenInput.value = "";
+            netlifyTokenInput.placeholder = "Enter Netlify token";
+            saveNetlifyTokenBtn.textContent = "Save";
+        }
+
+        async function saveNetlifyToken() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            if (netlifyTokenLocked) {
+                setNetlifyTokenLocked(false);
+                netlifyTokenInput.focus();
+                return;
+            }
+            const value = netlifyTokenInput.value.trim();
+            netlifyTokenStatus.textContent = "Verifying...";
+            const result = await window.pywebview.api.save_netlify_token(value);
+            if (result.status === "ok") {
+                netlifyTokenStatus.textContent = result.message;
+                setNetlifyTokenLocked(Boolean(value));
+                setStatus(value ? "Netlify token saved." : "Netlify token cleared.");
+            } else {
+                netlifyTokenStatus.textContent = result.message;
+                setStatus("Netlify token verification failed.");
+            }
+        }
+
+        async function loadNetlifyToken() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            const token = await window.pywebview.api.get_netlify_token();
+            if (token) {
+                setNetlifyTokenLocked(true);
+                netlifyTokenStatus.textContent = "Token configured";
+            }
+        }
+
+        async function deployToWeb() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            const token = await window.pywebview.api.get_netlify_token();
+            if (!token) {
+                setStatus("Please add your Netlify token in Options first.");
+                return;
+            }
+
+            deployWebBtn.disabled = true;
+            deployWebBtn.textContent = "Deploying...";
+            deployResultPanel.style.display = "none";
+            setStatus("Deploying to web...");
+
+            try {
+                const payload = buildExportPayload();
+                const result = await window.pywebview.api.deploy_to_web(payload);
+
+                if (result.status === "ok") {
+                    deployUrlInput.value = result.url;
+                    deployResultPanel.style.display = "block";
+                    setStatus("Deployed successfully!");
+                } else {
+                    setStatus("Deploy failed: " + result.message);
+                }
+            } catch (err) {
+                setStatus("Deploy error: " + err.message);
+            } finally {
+                deployWebBtn.disabled = false;
+                deployWebBtn.textContent = "Deploy to Web";
+            }
+        }
+
+        function copyDeployUrl() {
+            deployUrlInput.select();
+            document.execCommand("copy");
+            setStatus("URL copied to clipboard!");
+        }
+
+        async function browseOutputFolder() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            const result = await window.pywebview.api.select_output_folder();
+            if (result && result.status === "ok" && result.path) {
+                state.outputFolder = result.path;
+                outputFolderInput.value = result.path;
+            }
+        }
+
+        async function resetOutputFolder() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            await window.pywebview.api.reset_output_folder();
+            state.outputFolder = null;
+            outputFolderInput.value = "(Default - same as photos)";
+        }
+
+        function getFilenameFromPath(path) {
+            if (!path) {
+                return "";
+            }
+            const parts = path.split(/[/\\]/);
+            return parts[parts.length - 1] || "";
+        }
+
+        async function requestCustomMapImage() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return null;
+            }
+            try {
+                const result = await window.pywebview.api.select_custom_map_image();
+                if (!result || result.status !== "ok") {
+                    return null;
+                }
+                const uri = result.uri || result.file_uri || "";
+                return {
+                    path: result.path,
+                    uri,
+                    fileUri: result.file_uri || "",
+                    name: result.name || getFilenameFromPath(result.path),
+                    fromPayload: false
+                };
+            } catch (err) {
+                return null;
+            }
+        }
+
+        async function resolveCustomMapSelection(payload) {
+            if (payload && payload.custom_map_path) {
+                const uri = payload.custom_map_uri || payload.custom_map_file_uri || "";
+                if (uri) {
+                    return {
+                        path: payload.custom_map_path,
+                        uri,
+                        fileUri: payload.custom_map_file_uri || "",
+                        name: getFilenameFromPath(payload.custom_map_path),
+                        fromPayload: true
+                    };
+                }
+            }
+            return requestCustomMapImage();
+        }
+
+        async function openEditor() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            if (!state.photos.length) {
+                setStatus("No photos selected.", true);
+                return;
+            }
+            setStatus("Preparing editor...");
+            const result = await window.pywebview.api.get_editor_state();
+            if (!result || result.status !== "ok") {
+                setStatus(result && result.message ? result.message : "Unable to open editor.", true);
+                return;
+            }
+            await refreshGroups();
+            const hasGpsData = (result.photos || []).some((photo) => Boolean(photo.gps));
+            let mapMode = MAP_SOURCE_TILES;
+            if (!hasGpsData) {
+                mapMode = MAP_SOURCE_CUSTOM;
+            } else {
+                const choice = await showMapSourcePicker();
+                if (!choice) {
+                    setStatus("Editor cancelled.");
+                    return;
+                }
+                mapMode = choice;
+            }
+
+            let customSelection = null;
+            if (mapMode === MAP_SOURCE_CUSTOM) {
+                customSelection = await resolveCustomMapSelection(result);
+                if (!customSelection) {
+                    setStatus("Custom image required to continue.", true);
+                    return;
+                }
+            }
+
+            setView("editor");
+            requestAnimationFrame(() => {
+                editorLoad(result, mapMode, customSelection);
+            });
+            setStatus("Ready");
+        }
+
+        async function startKmzExport() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            if (state.placedCount === 0) {
+                setStatus("No placed photos to export.", true);
+                return;
+            }
+            setProgress(0);
+            setStatus("Preparing KMZ export...");
+            createKmzBtn.disabled = true;
+            openEditorBtn.disabled = true;
+            const payload = {
+                project_name: projectNameInput.value.trim() || "PicPlotter Export",
+                compression_quality: Number(qualityInput.value)
+            };
+            const result = await window.pywebview.api.start_kmz_export(payload);
+            if (!result || result.status !== "started") {
+                createKmzBtn.disabled = false;
+                openEditorBtn.disabled = state.photos.length === 0;
+                if (result && result.status === "cancel") {
+                    setStatus("KMZ export cancelled.");
+                } else {
+                    setStatus(result && result.message ? result.message : "KMZ export failed.", true);
+                }
+            }
+        }
+
+        window.kmzProgress = function(status, progress) {
+            setStatus(status || "Exporting...");
+            setProgress(progress || 0);
+        };
+
+        window.kmzComplete = function(result) {
+            createKmzBtn.disabled = false;
+            openEditorBtn.disabled = state.photos.length === 0;
+            if (!result || result.status !== "ok") {
+                setStatus(result && result.message ? result.message : "KMZ export failed.", true);
+                return;
+            }
+            setProgress(1);
+            setStatus(`KMZ exported: ${result.path}`);
+        };
+
+        window.kmzError = function(message) {
+            createKmzBtn.disabled = false;
+            openEditorBtn.disabled = state.photos.length === 0;
+            setStatus(message || "KMZ export failed.", true);
+        };
+
+        document.getElementById("select-photos").addEventListener("click", selectPhotos);
+        if (selectAllPhotosBtn) {
+            selectAllPhotosBtn.addEventListener("click", selectAllPhotos);
+        }
+        if (deselectPhotosBtn) {
+            deselectPhotosBtn.addEventListener("click", clearFileSelection);
+        }
+        if (deletePhotosBtn) {
+            deletePhotosBtn.addEventListener("click", deleteSelectedPhotos);
+        }
+        clearPhotosBtn.addEventListener("click", clearPhotos);
+        if (fileListEl) {
+            fileListEl.addEventListener("scroll", hidePhotoPreview);
+        }
+        document.getElementById("save-api-key").addEventListener("click", saveApiKey);
+        saveNetlifyTokenBtn.addEventListener("click", saveNetlifyToken);
+
+        const settingsToggle = document.getElementById("settings-toggle");
+        const settingsContent = document.getElementById("settings-content");
+        settingsToggle.addEventListener("click", () => {
+            settingsToggle.classList.toggle("expanded");
+            settingsContent.classList.toggle("expanded");
+        });
+        deployWebBtn.addEventListener("click", deployToWeb);
+        copyUrlBtn.addEventListener("click", copyDeployUrl);
+        document.getElementById("browse-output").addEventListener("click", browseOutputFolder);
+        document.getElementById("reset-output").addEventListener("click", resetOutputFolder);
+        openEditorBtn.addEventListener("click", openEditor);
+        createKmzBtn.addEventListener("click", startKmzExport);
+        if (addGroupBtn) {
+            addGroupBtn.addEventListener("click", addGroup);
+        }
+        if (deleteGroupBtn) {
+            deleteGroupBtn.addEventListener("click", deleteGroup);
+        }
+
+        qualityInput.addEventListener("input", () => {
+            qualityValue.textContent = `${qualityInput.value}%`;
+            return;
+        });
+
+        setApiKeyLocked(Boolean(state.apiKey));
+
+        updateButtons();
+        refreshGroups();
+        window.addEventListener("pywebviewready", () => {
+            refreshGroups();
+            loadNetlifyToken();
+        });
+
+        /* Editor logic */
+        const editor = {
+            photos: [],
+            markerSize: state.markerSize,
+            heading: state.heading,
+            tileHeading: state.heading,
+            customHeading: state.heading,
+            zoom: 19,
+            center: { lat: 0, lng: 0 },
+            mapMode: MAP_SOURCE_TILES,
+            mode: MODE_PLOT,
+            modeLocked: false,
+            customMap: {
+                path: null,
+                uri: null,
+                fileUri: null,
+                width: 0,
+                height: 0,
+                ready: false,
+                name: ""
+            },
+            autoplotEnabled: true,
+            autoplotTransform: null,
+            autoplotError: "",
+            markerElements: [],
+            geometry: null,
+            renderPending: false,
+            mapDrag: null,
+            markerDrag: null,
+            overrideTimer: null,
+            selectedIndex: null
+        };
+
+        const editorStatusEl = document.getElementById("editor-status");
+        const editorPhotoListEl = document.getElementById("editor-photo-list");
+        const editorPhotoCountEl = document.getElementById("editor-photo-count");
+        const editorPhotoHintEl = document.getElementById("editor-photo-hint");
+        const modePlotBtn = document.getElementById("mode-plot");
+        const modeAdjustBtn = document.getElementById("mode-adjust");
+        const modeHintEl = document.getElementById("mode-hint");
+        const markerSizeInput = document.getElementById("editor-marker-size");
+        const markerSizeValue = document.getElementById("editor-marker-size-value");
+        const rotationInput = document.getElementById("editor-rotation");
+        const rotationValue = document.getElementById("editor-rotation-value");
+        const rotateLeftBtn = document.getElementById("rotate-left");
+        const rotateRightBtn = document.getElementById("rotate-right");
+        const editorViewport = document.getElementById("editor-viewport");
+        const tileLayer = document.getElementById("editor-tile-layer");
+        const markerLayer = document.getElementById("editor-marker-layer");
+        const exportBtn = document.getElementById("export-html");
+        const rotationPanel = document.getElementById("editor-rotation-panel");
+
+        const customImageEl = document.createElement("img");
+        customImageEl.id = "editor-custom-image";
+        customImageEl.alt = "Custom map";
+        customImageEl.draggable = false;
+
+        function setEditorStatus(message, isWarning) {
+            editorStatusEl.textContent = message || "";
+            editorStatusEl.style.color = isWarning ? "var(--warning)" : "var(--muted)";
+        }
+
+        function isCustomMode() {
+            return editor.mapMode === MAP_SOURCE_CUSTOM;
+        }
+
+        function isCalibrateMode() {
+            return isCustomMode() && editor.mode === MODE_PLOT;
+        }
+
+        function isAdjustMode() {
+            return isCustomMode() && editor.mode === MODE_ADJUST;
+        }
+
+        function setEditorModeUI() {
+            const customMode = isCustomMode();
+            if (rotationPanel) {
+                rotationPanel.style.display = "flex";
+            }
+            rotationInput.disabled = false;
+            rotateLeftBtn.disabled = false;
+            rotateRightBtn.disabled = false;
+            if (editorModePanel) {
+                editorModePanel.style.display = customMode ? "flex" : "none";
+            }
+            if (customImagePanel) {
+                customImagePanel.style.display = customMode ? "flex" : "none";
+            }
+            if (customMode) {
+                customImageNameEl.textContent = editor.customMap.name || "No image selected";
+            }
+            updateAutoplotStatus();
+            updateModeUI();
+        }
+
+        function updateModeUI() {
+            if (!modePlotBtn || !modeAdjustBtn) {
+                return;
+            }
+            const isPlot = editor.mode === MODE_PLOT;
+            modePlotBtn.classList.toggle("active", isPlot);
+            modeAdjustBtn.classList.toggle("active", !isPlot);
+
+            const locked = editor.modeLocked;
+            modePlotBtn.disabled = locked;
+            modeAdjustBtn.disabled = locked;
+
+            if (modeHintEl) {
+                if (!isCustomMode()) {
+                    modeHintEl.textContent = "";
+                } else if (locked) {
+                    modeHintEl.textContent = "All photos placed. Manual mode locked.";
+                } else if (isPlot) {
+                    modeHintEl.textContent = "Calibrate mode: click the image to place GPS calibration points.";
+                } else {
+                    modeHintEl.textContent = "Manual mode: drag markers to refine placement.";
+                }
+            }
+            if (editorViewport) {
+                editorViewport.classList.toggle("calibrating", isCalibrateMode());
+            }
+            updateSelectedPhotoUI();
+        }
+
+        function updateMarkerInteractivity() {
+            const lockMarkers = isCustomMode() && editor.mode !== MODE_ADJUST;
+            editor.markerElements.forEach((marker) => {
+                if (marker) {
+                    marker.classList.toggle("plot-locked", lockMarkers);
+                }
+            });
+        }
+
+        function setEditorMode(mode, options = {}) {
+            const force = options.force === true;
+            if (editor.modeLocked && !force) {
+                return;
+            }
+            const nextMode = mode === MODE_ADJUST ? MODE_ADJUST : MODE_PLOT;
+            if (editor.mode === nextMode && !force) {
+                return;
+            }
+            editor.mode = nextMode;
+            updateModeUI();
+            updateMarkerInteractivity();
+            if (isCustomMode()) {
+                if (editor.mode === MODE_ADJUST) {
+                    updateAutoplot({ commit: true });
+                } else {
+                    restoreAutoplotPreview();
+                    updateAutoplot();
+                }
+            }
+        }
+
+        function resetEditorMode() {
+            editor.modeLocked = false;
+            editor.mode = MODE_PLOT;
+            updateModeUI();
+            updateMarkerInteractivity();
+            if (isCustomMode()) {
+                updateAutoplot();
+            }
+        }
+
+        function clearCustomPlacements() {
+            editor.photos.forEach((photo) => {
+                if (!photo) {
+                    return;
+                }
+                photo.pixel = null;
+                photo.calibrationPixel = null;
+                photo.autoPixel = null;
+                photo.autoCommitted = false;
+            });
+            editor.autoplotTransform = null;
+            editor.autoplotError = "";
+            resetEditorMode();
+        }
+
+        function clearAutoPlacements() {
+            editor.photos.forEach((photo) => {
+                if (!photo) {
+                    return;
+                }
+                if (photo.has_gps) {
+                    photo.gps = photo.originalGps ? { ...photo.originalGps } : null;
+                } else {
+                    photo.gps = null;
+                }
+                photo.has_override = false;
+            });
+            createMarkers();
+            renderPhotoList();
+            scheduleEditorRender();
+        }
+
+        async function resetEditorPlacements() {
+            if (!editor.photos.length) {
+                setEditorStatus("No photos loaded.", true);
+                return;
+            }
+            const message = isCustomMode()
+                ? "This will clear all calibration points and placements for every photo."
+                : "This will reset GPS photo positions and clear manual placements for non-GPS photos.";
+            const confirmed = await showConfirm({
+                title: "Reset placements?",
+                message: `${message} This cannot be undone.`,
+                acceptLabel: "Reset"
+            });
+            if (!confirmed) {
+                setEditorStatus("Reset cancelled.");
+                return;
+            }
+            if (isCustomMode()) {
+                clearCustomPlacements();
+                setEditorStatus("All custom placements cleared.");
+            } else {
+                clearAutoPlacements();
+                setEditorStatus("Auto map placements reset.");
+            }
+            scheduleOverrideSave();
+        }
+
+        function setCustomMapInfo(selection) {
+            editor.customMap = {
+                path: selection ? selection.path : null,
+                uri: selection ? selection.uri : null,
+                fileUri: selection ? selection.fileUri || null : null,
+                width: 0,
+                height: 0,
+                ready: false,
+                name: selection ? selection.name : ""
+            };
+            if (customImagePanel) {
+                customImageNameEl.textContent = editor.customMap.name || "No image selected";
+            }
+        }
+
+        function loadCustomMap() {
+            if (!editor.customMap.uri && !editor.customMap.fileUri) {
+                editor.customMap.ready = false;
+                return Promise.resolve(false);
+            }
+            if (
+                editor.customMap.ready &&
+                customImageEl.src &&
+                (customImageEl.src === editor.customMap.uri || customImageEl.src === editor.customMap.fileUri)
+            ) {
+                return Promise.resolve(true);
+            }
+            return new Promise((resolve) => {
+                editor.customMap.ready = false;
+
+                const tryLoad = (src, fallback) => {
+                    if (!src) {
+                        editor.customMap.ready = false;
+                        resolve(false);
+                        return;
+                    }
+                    customImageEl.onload = () => {
+                        editor.customMap.width = customImageEl.naturalWidth || customImageEl.width;
+                        editor.customMap.height = customImageEl.naturalHeight || customImageEl.height;
+                        editor.customMap.ready = true;
+                        editor.customMap.uri = src;
+                        resolve(true);
+                    };
+                    customImageEl.onerror = () => {
+                        if (fallback) {
+                            tryLoad(fallback, null);
+                        } else {
+                            editor.customMap.ready = false;
+                            resolve(false);
+                        }
+                    };
+                    customImageEl.src = src;
+                };
+
+                const fallback = editor.customMap.fileUri && editor.customMap.fileUri !== editor.customMap.uri
+                    ? editor.customMap.fileUri
+                    : null;
+                tryLoad(editor.customMap.uri || editor.customMap.fileUri, fallback);
+            });
+        }
+
+        function isValidGps(gps) {
+            return (
+                gps &&
+                Number.isFinite(gps.latitude) &&
+                Number.isFinite(gps.longitude)
+            );
+        }
+
+        function isEligibleGps(photo) {
+            return Boolean(photo && photo.has_gps && isValidGps(photo.gps));
+        }
+
+        function isValidPixel(pixel) {
+            return (
+                pixel &&
+                Number.isFinite(pixel.x) &&
+                Number.isFinite(pixel.y)
+            );
+        }
+
+        function getAdjustPixel(photo) {
+            if (!photo) {
+                return null;
+            }
+            return isValidPixel(photo.pixel) ? photo.pixel : null;
+        }
+
+        function getCalibrationPixel(photo) {
+            if (!isEligibleGps(photo)) {
+                return null;
+            }
+            return isValidPixel(photo.calibrationPixel) ? photo.calibrationPixel : null;
+        }
+
+        function getAutoPixel(photo) {
+            if (!photo || !isCustomMode() || !editor.autoplotEnabled) {
+                return null;
+            }
+            if (!isEligibleGps(photo)) {
+                return null;
+            }
+            if (getAdjustPixel(photo)) {
+                return null;
+            }
+            return isValidPixel(photo.autoPixel) ? photo.autoPixel : null;
+        }
+
+        function getDisplayPixel(photo) {
+            if (!photo || !isCustomMode()) {
+                return null;
+            }
+            if (isCalibrateMode()) {
+                if (isEligibleGps(photo)) {
+                    return getCalibrationPixel(photo) || getAdjustPixel(photo) || getAutoPixel(photo);
+                }
+                return getAdjustPixel(photo);
+            }
+            return getAdjustPixel(photo);
+        }
+
+        function isPhotoPlaced(photo) {
+            if (isCustomMode()) {
+                if (isCalibrateMode()) {
+                    if (isEligibleGps(photo)) {
+                        return Boolean(getCalibrationPixel(photo) || getAdjustPixel(photo));
+                    }
+                    return Boolean(getAdjustPixel(photo));
+                }
+                return Boolean(getAdjustPixel(photo));
+            }
+            return isValidGps(photo.gps);
+        }
+
+        function getPlacedPhotos() {
+            return editor.photos.filter((photo) => isPhotoPlaced(photo));
+        }
+
+        function getAdjustPlacedPhotos() {
+            return editor.photos.filter((photo) => Boolean(getAdjustPixel(photo)));
+        }
+
+        function getVisiblePhotos() {
+            return editor.photos.filter((photo) => Boolean(getDisplayPixel(photo)));
+        }
+
+        function getExportPhotos() {
+            if (isCustomMode()) {
+                return editor.photos.filter((photo) => Boolean(getDisplayPixel(photo)));
+            }
+            return getPlacedPhotos();
+        }
+
+        function getUnplacedNonGpsPhotos() {
+            return editor.photos.filter((photo) => {
+                if (!photo) {
+                    return false;
+                }
+                return !photo.has_gps && !isPhotoPlaced(photo);
+            });
+        }
+
+        function getNextTargetIndex() {
+            if (!editor.photos.length) {
+                return null;
+            }
+            if (isCustomMode()) {
+                for (let i = 0; i < editor.photos.length; i += 1) {
+                    if (!isPhotoPlaced(editor.photos[i])) {
+                        return i;
+                    }
+                }
+                return null;
+            }
+            for (let i = 0; i < editor.photos.length; i += 1) {
+                const photo = editor.photos[i];
+                if (photo.has_gps) {
+                    continue;
+                }
+                if (!isValidGps(photo.gps)) {
+                    return i;
+                }
+            }
+            return null;
+        }
+
+        function getCalibrationPoints() {
+            return editor.photos.reduce((points, photo) => {
+                if (!isEligibleGps(photo)) {
+                    return points;
+                }
+                const pixel = getCalibrationPixel(photo);
+                if (pixel) {
+                    points.push({ gps: photo.gps, pixel });
+                }
+                return points;
+            }, []);
+        }
+
+        function solveLinearSystem(matrix, vector) {
+            const size = vector.length;
+            const m = matrix.map((row) => row.slice());
+            const v = vector.slice();
+            for (let i = 0; i < size; i += 1) {
+                let maxRow = i;
+                let maxValue = Math.abs(m[i][i]);
+                for (let r = i + 1; r < size; r += 1) {
+                    const value = Math.abs(m[r][i]);
+                    if (value > maxValue) {
+                        maxValue = value;
+                        maxRow = r;
+                    }
+                }
+                if (maxValue < 1e-12) {
+                    return null;
+                }
+                if (maxRow !== i) {
+                    const tempRow = m[i];
+                    m[i] = m[maxRow];
+                    m[maxRow] = tempRow;
+                    const tempValue = v[i];
+                    v[i] = v[maxRow];
+                    v[maxRow] = tempValue;
+                }
+                const pivot = m[i][i];
+                for (let c = i; c < size; c += 1) {
+                    m[i][c] /= pivot;
+                }
+                v[i] /= pivot;
+                for (let r = 0; r < size; r += 1) {
+                    if (r === i) {
+                        continue;
+                    }
+                    const factor = m[r][i];
+                    if (!factor) {
+                        continue;
+                    }
+                    for (let c = i; c < size; c += 1) {
+                        m[r][c] -= factor * m[i][c];
+                    }
+                    v[r] -= factor * v[i];
+                }
+            }
+            return v;
+        }
+
+        function computeAutoplotTransform(points) {
+            if (points.length < CUSTOM_CALIBRATION_MIN_POINTS) {
+                return null;
+            }
+            const matrix = Array.from({ length: 6 }, () => Array(6).fill(0));
+            const vector = new Array(6).fill(0);
+
+            points.forEach((point) => {
+                const lon = point.gps.longitude;
+                const lat = point.gps.latitude;
+                const rows = [
+                    { r: [lon, lat, 1, 0, 0, 0], b: point.pixel.x },
+                    { r: [0, 0, 0, lon, lat, 1], b: point.pixel.y }
+                ];
+                rows.forEach(({ r, b }) => {
+                    for (let i = 0; i < 6; i += 1) {
+                        vector[i] += r[i] * b;
+                        for (let j = 0; j < 6; j += 1) {
+                            matrix[i][j] += r[i] * r[j];
+                        }
+                    }
+                });
+            });
+
+            const params = solveLinearSystem(matrix, vector);
+            if (!params) {
+                return null;
+            }
+            return {
+                a: params[0],
+                b: params[1],
+                c: params[2],
+                d: params[3],
+                e: params[4],
+                f: params[5]
+            };
+        }
+
+        function transformGpsToPixel(transform, gps) {
+            return {
+                x: transform.a * gps.longitude + transform.b * gps.latitude + transform.c,
+                y: transform.d * gps.longitude + transform.e * gps.latitude + transform.f
+            };
+        }
+
+        function clampCustomPixel(pixel) {
+            if (!editor.customMap.ready) {
+                return null;
+            }
+            return {
+                x: Math.max(0, Math.min(editor.customMap.width, pixel.x)),
+                y: Math.max(0, Math.min(editor.customMap.height, pixel.y))
+            };
+        }
+
+        function clearAutoplotPixels() {
+            editor.photos.forEach((photo) => {
+                if (photo) {
+                    photo.autoPixel = null;
+                }
+            });
+        }
+
+        function restoreAutoplotPreview() {
+            editor.photos.forEach((photo) => {
+                if (!photo || !photo.autoCommitted) {
+                    return;
+                }
+                if (getCalibrationPixel(photo)) {
+                    return;
+                }
+                photo.pixel = null;
+                photo.autoCommitted = false;
+                photo.autoPixel = null;
+            });
+        }
+
+        function commitAutoplotPixels() {
+            let committedCount = 0;
+            editor.photos.forEach((photo) => {
+                if (!isEligibleGps(photo)) {
+                    return;
+                }
+                const calibrationPixel = getCalibrationPixel(photo);
+                if (calibrationPixel) {
+                    if (!getAdjustPixel(photo)) {
+                        photo.pixel = { x: calibrationPixel.x, y: calibrationPixel.y };
+                    }
+                    photo.autoCommitted = false;
+                    photo.autoPixel = null;
+                    return;
+                }
+                const autoPixel = isValidPixel(photo.autoPixel) ? photo.autoPixel : null;
+                if (!autoPixel) {
+                    photo.autoPixel = null;
+                    return;
+                }
+                const adjustPixel = getAdjustPixel(photo);
+                if (!adjustPixel || photo.autoCommitted) {
+                    photo.pixel = { x: autoPixel.x, y: autoPixel.y };
+                    photo.autoCommitted = true;
+                    committedCount += 1;
+                }
+                photo.autoPixel = null;
+            });
+            return committedCount;
+        }
+
+        function applyAutoplotTransform(transform) {
+            let autoCount = 0;
+            editor.photos.forEach((photo) => {
+                if (!photo) {
+                    return;
+                }
+                if (!isEligibleGps(photo) || getCalibrationPixel(photo) || getAdjustPixel(photo)) {
+                    photo.autoPixel = null;
+                    return;
+                }
+                const predicted = transformGpsToPixel(transform, photo.gps);
+                if (!Number.isFinite(predicted.x) || !Number.isFinite(predicted.y)) {
+                    photo.autoPixel = null;
+                    return;
+                }
+                const clamped = clampCustomPixel(predicted);
+                if (!clamped) {
+                    photo.autoPixel = null;
+                    return;
+                }
+                photo.autoPixel = clamped;
+                autoCount += 1;
+            });
+            return autoCount;
+        }
+
+        function getAutoPlacedCount() {
+            let count = 0;
+            editor.photos.forEach((photo) => {
+                if (!photo || getCalibrationPixel(photo) || getAdjustPixel(photo) || !isEligibleGps(photo)) {
+                    return;
+                }
+                if (getAutoPixel(photo)) {
+                    count += 1;
+                }
+            });
+            return count;
+        }
+
+        function updateAutoplotStatus(summary = {}) {
+            if (!customAutoplotStatus) {
+                return;
+            }
+            if (!isCustomMode()) {
+                customAutoplotStatus.textContent = "";
+                return;
+            }
+            if (!isCalibrateMode()) {
+                customAutoplotStatus.textContent = editor.autoplotEnabled
+                    ? "Manual mode: auto-plot preview paused."
+                    : "Auto-plot off.";
+                return;
+            }
+            const calibrationCount = summary.calibrationCount ?? getCalibrationPoints().length;
+            const remaining = Math.max(0, CUSTOM_CALIBRATION_MIN_POINTS - calibrationCount);
+
+            if (!editor.autoplotEnabled) {
+                if (remaining > 0) {
+                    customAutoplotStatus.textContent = `Auto-plot off. Place ${remaining} more GPS photos to calibrate.`;
+                } else {
+                    customAutoplotStatus.textContent = `Auto-plot off. ${calibrationCount} calibration points ready.`;
+                }
+                return;
+            }
+
+            if (!editor.customMap.ready) {
+                customAutoplotStatus.textContent = "Load a custom image to calibrate.";
+                return;
+            }
+
+            if (calibrationCount < CUSTOM_CALIBRATION_MIN_POINTS) {
+                customAutoplotStatus.textContent = `Place ${remaining} more GPS photos to auto-plot. (${calibrationCount}/${CUSTOM_CALIBRATION_MIN_POINTS})`;
+                return;
+            }
+
+            if (editor.autoplotError) {
+                customAutoplotStatus.textContent = `Auto-plot paused: ${editor.autoplotError}`;
+                return;
+            }
+
+            const autoCount = summary.autoCount ?? getAutoPlacedCount();
+            customAutoplotStatus.textContent =
+                `Auto-plot previewing ${autoCount} photos with ${calibrationCount} calibration points. ` +
+                "Click Manual to accept.";
+        }
+
+        function syncModeLock() {
+            if (isCustomMode()) {
+                editor.modeLocked = false;
+                updateModeUI();
+                updateMarkerInteractivity();
+                return;
+            }
+            const nextIndex = getNextTargetIndex();
+            if (nextIndex === null || nextIndex === undefined) {
+                editor.modeLocked = true;
+                editor.mode = MODE_ADJUST;
+            } else {
+                editor.modeLocked = false;
+            }
+            updateModeUI();
+            updateMarkerInteractivity();
+        }
+
+        function updateAutoplot(options = {}) {
+            if (!isCustomMode()) {
+                return;
+            }
+            const commit = options.commit === true;
+            if (!isCalibrateMode() && !commit) {
+                updateAutoplotStatus();
+                return;
+            }
+            const calibrationPoints = getCalibrationPoints();
+            const calibrationCount = calibrationPoints.length;
+            let autoCount = 0;
+
+            if (!editor.autoplotEnabled) {
+                editor.autoplotTransform = null;
+                editor.autoplotError = "";
+                clearAutoplotPixels();
+                if (commit) {
+                    commitAutoplotPixels();
+                }
+                if (isCalibrateMode() || commit) {
+                    createMarkers();
+                    renderPhotoList();
+                    updateAutoplotStatus({ calibrationCount, autoCount });
+                    syncModeLock();
+                    scheduleEditorRender();
+                } else {
+                    updateAutoplotStatus({ calibrationCount, autoCount });
+                }
+                return;
+            }
+
+            if (!editor.customMap.ready) {
+                editor.autoplotTransform = null;
+                editor.autoplotError = "";
+                clearAutoplotPixels();
+                if (commit) {
+                    commitAutoplotPixels();
+                }
+                if (isCalibrateMode() || commit) {
+                    createMarkers();
+                    renderPhotoList();
+                    updateAutoplotStatus({ calibrationCount, autoCount });
+                    syncModeLock();
+                    scheduleEditorRender();
+                } else {
+                    updateAutoplotStatus({ calibrationCount, autoCount });
+                }
+                return;
+            }
+
+            if (calibrationCount < CUSTOM_CALIBRATION_MIN_POINTS) {
+                editor.autoplotTransform = null;
+                editor.autoplotError = "";
+                clearAutoplotPixels();
+                if (commit) {
+                    commitAutoplotPixels();
+                }
+                if (isCalibrateMode() || commit) {
+                    createMarkers();
+                    renderPhotoList();
+                    updateAutoplotStatus({ calibrationCount, autoCount });
+                    syncModeLock();
+                    scheduleEditorRender();
+                } else {
+                    updateAutoplotStatus({ calibrationCount, autoCount });
+                }
+                return;
+            }
+
+            const transform = computeAutoplotTransform(calibrationPoints);
+            if (!transform) {
+                editor.autoplotTransform = null;
+                editor.autoplotError = "Calibration points are collinear.";
+                clearAutoplotPixels();
+                if (commit) {
+                    commitAutoplotPixels();
+                }
+                if (isCalibrateMode() || commit) {
+                    createMarkers();
+                    renderPhotoList();
+                    updateAutoplotStatus({ calibrationCount, autoCount });
+                    syncModeLock();
+                    scheduleEditorRender();
+                } else {
+                    updateAutoplotStatus({ calibrationCount, autoCount });
+                }
+                return;
+            }
+
+            editor.autoplotTransform = transform;
+            editor.autoplotError = "";
+            autoCount = applyAutoplotTransform(transform);
+            if (commit) {
+                commitAutoplotPixels();
+            }
+            if (isCalibrateMode() || commit) {
+                createMarkers();
+                renderPhotoList();
+                updateAutoplotStatus({ calibrationCount, autoCount });
+                syncModeLock();
+                scheduleEditorRender();
+            } else {
+                updateAutoplotStatus({ calibrationCount, autoCount });
+            }
+        }
+
+        function advanceSelectionAfterPlacement(placedIndex) {
+            const nextIndex = getNextTargetIndex();
+            if (nextIndex === null || nextIndex === undefined) {
+                editor.selectedIndex = placedIndex;
+                renderPhotoList();
+                if (isCustomMode()) {
+                    setEditorStatus("Calibration updated. Switch to Manual to accept auto-plot.");
+                    return;
+                }
+                editor.modeLocked = true;
+                setEditorMode(MODE_ADJUST, { force: true });
+                setEditorStatus("All photos placed. Manual mode locked.");
+                return;
+            }
+            selectPhoto(nextIndex);
+        }
+
+        function updateSelectedPhotoUI() {
+            const hasSelection = editor.selectedIndex !== null && editor.selectedIndex < editor.photos.length;
+            if (!hasSelection) {
+                editorPhotoHintEl.textContent = "Select a photo to place or adjust a marker.";
+                return;
+            }
+
+            const photo = editor.photos[editor.selectedIndex];
+            if (isPhotoPlaced(photo)) {
+                if (isCustomMode()) {
+                    if (isAdjustMode()) {
+                        editorPhotoHintEl.textContent = "Drag the marker to adjust placement.";
+                    } else if (getCalibrationPixel(photo)) {
+                        editorPhotoHintEl.textContent = "Calibration point set. Switch to Manual to move markers.";
+                    } else {
+                        editorPhotoHintEl.textContent = "Placement set. Switch to Manual to move markers.";
+                    }
+                } else {
+                    editorPhotoHintEl.textContent = "Drag the marker to adjust placement.";
+                }
+            } else {
+                const target = isCustomMode() ? "image" : "map";
+                editorPhotoHintEl.textContent = `Click the ${target} to place a marker for the selected photo.`;
+            }
+        }
+
+        function renderPhotoList() {
+            editorPhotoListEl.innerHTML = "";
+            if (!editor.photos.length) {
+                editorPhotoCountEl.textContent = "No photos loaded";
+                updateSelectedPhotoUI();
+                return;
+            }
+
+            let placedCount = 0;
+            editor.photos.forEach((photo, index) => {
+                const placed = isPhotoPlaced(photo);
+                const autoPreview = isCustomMode()
+                    && isCalibrateMode()
+                    && !placed
+                    && isEligibleGps(photo)
+                    && Boolean(getAutoPixel(photo));
+                if (placed) {
+                    placedCount += 1;
+                }
+
+                const item = document.createElement("div");
+                let className = "editor-photo-item";
+                if (placed) {
+                    className += " placed";
+                }
+                if (editor.selectedIndex === index) {
+                    className += " selected";
+                }
+                item.className = className;
+                item.addEventListener("click", () => selectPhoto(index));
+
+                const badge = document.createElement("div");
+                badge.className = "editor-photo-badge";
+                badge.textContent = String(index + 1);
+
+                const meta = document.createElement("div");
+                meta.className = "editor-photo-meta";
+
+                const name = document.createElement("div");
+                name.className = "editor-photo-name";
+                name.textContent = getPhotoDisplayName(photo);
+
+                meta.appendChild(name);
+
+                const status = document.createElement("div");
+                status.className = "editor-photo-status";
+                if (!placed && !autoPreview) {
+                    status.textContent = "Unplotted";
+                } else if (isCustomMode()) {
+                    if (autoPreview) {
+                        status.textContent = "Auto-plotted";
+                    } else if (isCalibrateMode() && getCalibrationPixel(photo)) {
+                        status.textContent = "Plotted";
+                    } else {
+                        status.textContent = "Plotted";
+                    }
+                } else if (!photo.has_gps) {
+                    status.textContent = "Manual";
+                } else {
+                    status.textContent = "GPS";
+                }
+
+                item.appendChild(badge);
+                item.appendChild(meta);
+                item.appendChild(status);
+                editorPhotoListEl.appendChild(item);
+            });
+
+            editorPhotoCountEl.textContent = `${placedCount} plotted / ${editor.photos.length}`;
+            updateSelectedPhotoUI();
+        }
+
+        function selectPhoto(index) {
+            editor.selectedIndex = index;
+            renderPhotoList();
+            const photo = editor.photos[index];
+            if (photo) {
+                if (isPhotoPlaced(photo)) {
+                    if (isCustomMode()) {
+                        if (isAdjustMode()) {
+                            setEditorStatus(`Photo ${index + 1} selected. Drag marker to adjust.`);
+                        } else {
+                            setEditorStatus(`Photo ${index + 1} selected. Switch to Manual to move marker.`);
+                        }
+                    } else {
+                        setEditorStatus(`Photo ${index + 1} selected. Drag marker to adjust.`);
+                    }
+                } else {
+                    const target = isCustomMode() ? "image" : "map";
+                    setEditorStatus(`Photo ${index + 1} selected. Click ${target} to place.`);
+                }
+            }
+        }
+
+        function clampLat(lat) {
+            return Math.max(-85, Math.min(85, lat));
+        }
+
+        function latLonToWorldPixel(lat, lon, zoomLevel) {
+            const clampedLat = clampLat(lat);
+            const siny = Math.sin((clampedLat * Math.PI) / 180);
+            const bounded = Math.min(Math.max(siny, -0.9999), 0.9999);
+            const x = TILE_SIZE * (0.5 + lon / 360);
+            const y = TILE_SIZE * (0.5 - Math.log((1 + bounded) / (1 - bounded)) / (4 * Math.PI));
+            const scale = 2 ** zoomLevel;
+            return { x: x * scale, y: y * scale };
+        }
+
+        function worldPixelToLatLon(x, y, zoomLevel) {
+            const scale = 2 ** zoomLevel;
+            const worldX = x / scale;
+            const worldY = y / scale;
+            const lon = (worldX / TILE_SIZE - 0.5) * 360;
+            const yNorm = 0.5 - worldY / TILE_SIZE;
+            const lat = (180 / Math.PI) * (2 * Math.atan(Math.exp(yNorm * 2 * Math.PI)) - Math.PI / 2);
+            return { lat: clampLat(lat), lng: lon };
+        }
+
+        function rotatePoint(x, y, centerX, centerY, angleDeg) {
+            if (!angleDeg) {
+                return { x, y };
+            }
+            const rad = (angleDeg * Math.PI) / 180;
+            const cosA = Math.cos(rad);
+            const sinA = Math.sin(rad);
+            const dx = x - centerX;
+            const dy = y - centerY;
+            return {
+                x: dx * cosA - dy * sinA + centerX,
+                y: dx * sinA + dy * cosA + centerY
+            };
+        }
+
+        function rotateVector(dx, dy, angleDeg) {
+            if (!angleDeg) {
+                return { x: dx, y: dy };
+            }
+            const rad = (angleDeg * Math.PI) / 180;
+            const cosA = Math.cos(rad);
+            const sinA = Math.sin(rad);
+            return {
+                x: dx * cosA - dy * sinA,
+                y: dx * sinA + dy * cosA
+            };
+        }
+
+        function computeBaseSize(width, height, angleDeg) {
+            if (!angleDeg) {
+                return { width, height };
+            }
+            const rad = (Math.abs(angleDeg) * Math.PI) / 180;
+            const cosA = Math.abs(Math.cos(rad));
+            const sinA = Math.abs(Math.sin(rad));
+            return {
+                width: Math.ceil(width * cosA + height * sinA),
+                height: Math.ceil(width * sinA + height * cosA)
+            };
+        }
+
+        function getViewportSize() {
+            const rect = editorViewport.getBoundingClientRect();
+            return { width: rect.width || EXPORT_MAX_DIM, height: rect.height || EXPORT_MAX_DIM };
+        }
+
+        function getGeometryFor(zoomLevel, centerLatLng) {
+            const size = getViewportSize();
+            const base = computeBaseSize(size.width, size.height, editor.heading);
+            const centerWorld = latLonToWorldPixel(centerLatLng.lat, centerLatLng.lng, zoomLevel);
+            const left = centerWorld.x - base.width / 2;
+            const top = centerWorld.y - base.height / 2;
+            const cropLeft = Math.round((base.width - size.width) / 2);
+            const cropTop = Math.round((base.height - size.height) / 2);
+
+            return {
+                viewportWidth: size.width,
+                viewportHeight: size.height,
+                baseWidth: base.width,
+                baseHeight: base.height,
+                left,
+                top,
+                cropLeft,
+                cropTop
+            };
+        }
+
+        function getCustomGeometry() {
+            const size = getViewportSize();
+            const baseWidth = editor.customMap.width * editor.zoom;
+            const baseHeight = editor.customMap.height * editor.zoom;
+            const left = size.width / 2 - editor.center.x * editor.zoom;
+            const top = size.height / 2 - editor.center.y * editor.zoom;
+
+            return {
+                viewportWidth: size.width,
+                viewportHeight: size.height,
+                baseWidth,
+                baseHeight,
+                left,
+                top,
+                cropLeft: 0,
+                cropTop: 0
+            };
+        }
+
+        function getGeometry() {
+            if (isCustomMode()) {
+                return getCustomGeometry();
+            }
+            return getGeometryFor(editor.zoom, editor.center);
+        }
+
+        function buildTileUrl(x, y, z) {
+            const hosts = ["mt0.google.com", "mt1.google.com", "mt2.google.com", "mt3.google.com"];
+            const host = hosts[(x + y + z) % hosts.length];
+            const keyParam = state.apiKey ? `&key=${encodeURIComponent(state.apiKey)}` : "";
+            return `https://${host}/vt/lyrs=s&x=${x}&y=${y}&z=${z}${keyParam}`;
+        }
+
+        function renderTiles(geometry) {
+            const { viewportWidth, viewportHeight, baseWidth, baseHeight, left, top } = geometry;
+            const offsetX = Math.round((viewportWidth - baseWidth) / 2);
+            const offsetY = Math.round((viewportHeight - baseHeight) / 2);
+
+            tileLayer.style.width = `${baseWidth}px`;
+            tileLayer.style.height = `${baseHeight}px`;
+            tileLayer.style.left = `${offsetX}px`;
+            tileLayer.style.top = `${offsetY}px`;
+            tileLayer.style.transform = `rotate(${-editor.heading}deg)`;
+            tileLayer.style.transformOrigin = "center center";
+            tileLayer.innerHTML = "";
+
+            const maxTile = 2 ** editor.zoom;
+            const minTileX = Math.floor(left / TILE_SIZE);
+            const maxTileX = Math.floor((left + baseWidth - 1) / TILE_SIZE);
+            const minTileY = Math.floor(top / TILE_SIZE);
+            const maxTileY = Math.floor((top + baseHeight - 1) / TILE_SIZE);
+
+            for (let ty = minTileY; ty <= maxTileY; ty += 1) {
+                if (ty < 0 || ty >= maxTile) {
+                    continue;
+                }
+                for (let tx = minTileX; tx <= maxTileX; tx += 1) {
+                    const tileX = ((tx % maxTile) + maxTile) % maxTile;
+                    const img = document.createElement("img");
+                    img.className = "tile";
+                    img.src = buildTileUrl(tileX, ty, editor.zoom);
+                    img.style.left = `${Math.round(tx * TILE_SIZE - left)}px`;
+                    img.style.top = `${Math.round(ty * TILE_SIZE - top)}px`;
+                    img.alt = "";
+                    img.draggable = false;
+                    tileLayer.appendChild(img);
+                }
+            }
+        }
+
+        function renderCustomImage(geometry) {
+            if (!editor.customMap.ready) {
+                tileLayer.innerHTML = "";
+                return;
+            }
+            const { baseWidth, baseHeight, left, top, viewportWidth, viewportHeight } = geometry;
+            const centerX = viewportWidth / 2;
+            const centerY = viewportHeight / 2;
+            const roundedLeft = Math.round(left);
+            const roundedTop = Math.round(top);
+            tileLayer.style.width = `${baseWidth}px`;
+            tileLayer.style.height = `${baseHeight}px`;
+            tileLayer.style.left = `${roundedLeft}px`;
+            tileLayer.style.top = `${roundedTop}px`;
+            tileLayer.style.transform = `rotate(${-editor.heading}deg)`;
+            tileLayer.style.transformOrigin = `${centerX - roundedLeft}px ${centerY - roundedTop}px`;
+            if (!tileLayer.contains(customImageEl)) {
+                tileLayer.innerHTML = "";
+                tileLayer.appendChild(customImageEl);
+            }
+        }
+
+        function computeLabelSize(size) {
+            return Math.max(10, Math.round(size * 0.29));
+        }
+
+        function computeLabelOffset(size) {
+            return Math.round(size * 0.09);
+        }
+
+        function updateMarkerStyles() {
+            const fontSize = computeLabelSize(editor.markerSize);
+            const labelOffset = computeLabelOffset(editor.markerSize);
+            editor.markerElements.forEach((marker, index) => {
+                if (!marker) {
+                    return;
+                }
+                const photo = editor.photos[index];
+                const color = photo && photo.group_color ? photo.group_color : "default";
+                const icon = state.markerImages[color] || MARKER_ICON;
+                marker.style.width = `${editor.markerSize}px`;
+                marker.style.height = `${editor.markerSize}px`;
+                marker.style.backgroundImage = `url(${icon})`;
+                const label = marker.querySelector("span");
+                if (label) {
+                    label.textContent = String(index + 1);
+                    label.style.fontSize = `${fontSize}px`;
+                    label.style.color = color.toLowerCase() === "#2a2a2a" ? "#2A9D6E" : "#111111";
+                    label.style.transform = `translateY(${labelOffset}px)`;
+                }
+            });
+        }
+
+        function updateMarkerPositions(geometry) {
+            if (isCustomMode()) {
+                const { left, top, viewportWidth, viewportHeight } = geometry;
+                const centerX = viewportWidth / 2;
+                const centerY = viewportHeight / 2;
+                const roundedLeft = Math.round(left);
+                const roundedTop = Math.round(top);
+                editor.markerElements.forEach((marker, index) => {
+                    if (!marker) {
+                        return;
+                    }
+                    const photo = editor.photos[index];
+                    const pixel = getDisplayPixel(photo);
+                    if (!pixel) {
+                        return;
+                    }
+                    const baseX = roundedLeft + pixel.x * editor.zoom;
+                    const baseY = roundedTop + pixel.y * editor.zoom;
+                    const rotated = rotatePoint(baseX, baseY, centerX, centerY, -editor.heading);
+                    marker.style.left = `${rotated.x}px`;
+                    marker.style.top = `${rotated.y}px`;
+                });
+                return;
+            }
+
+            const { baseWidth, baseHeight, left, top, cropLeft, cropTop } = geometry;
+            const centerX = baseWidth / 2;
+            const centerY = baseHeight / 2;
+
+            editor.markerElements.forEach((marker, index) => {
+                if (!marker) {
+                    return;
+                }
+                const photo = editor.photos[index];
+                if (!photo || !isPhotoPlaced(photo)) {
+                    return;
+                }
+                const world = latLonToWorldPixel(photo.gps.latitude, photo.gps.longitude, editor.zoom);
+                let px = world.x - left;
+                let py = world.y - top;
+                const rotated = rotatePoint(px, py, centerX, centerY, -editor.heading);
+                const screenX = rotated.x - cropLeft;
+                const screenY = rotated.y - cropTop;
+                marker.style.left = `${screenX}px`;
+                marker.style.top = `${screenY}px`;
+            });
+        }
+
+        function renderEditor() {
+            editor.geometry = getGeometry();
+            if (isCustomMode()) {
+                renderCustomImage(editor.geometry);
+            } else {
+                renderTiles(editor.geometry);
+            }
+            updateMarkerStyles();
+            updateMarkerPositions(editor.geometry);
+        }
+
+        function scheduleEditorRender() {
+            if (editor.renderPending) {
+                return;
+            }
+            editor.renderPending = true;
+            requestAnimationFrame(() => {
+                editor.renderPending = false;
+                renderEditor();
+            });
+        }
+
+        function screenToLatLon(x, y) {
+            if (!editor.geometry) {
+                editor.geometry = getGeometry();
+            }
+            const { baseWidth, baseHeight, left, top, cropLeft, cropTop } = editor.geometry;
+            const centerX = baseWidth / 2;
+            const centerY = baseHeight / 2;
+            const rotatedX = x + cropLeft;
+            const rotatedY = y + cropTop;
+            const unrotated = rotatePoint(rotatedX, rotatedY, centerX, centerY, editor.heading);
+            const worldX = unrotated.x + left;
+            const worldY = unrotated.y + top;
+            return worldPixelToLatLon(worldX, worldY, editor.zoom);
+        }
+
+        function screenToCustomPixel(x, y) {
+            if (!editor.geometry) {
+                editor.geometry = getGeometry();
+            }
+            if (!editor.customMap.ready) {
+                return null;
+            }
+            const { left, top, viewportWidth, viewportHeight } = editor.geometry;
+            const centerX = viewportWidth / 2;
+            const centerY = viewportHeight / 2;
+            const roundedLeft = Math.round(left);
+            const roundedTop = Math.round(top);
+            const unrotated = rotatePoint(x, y, centerX, centerY, editor.heading);
+            const pixelX = (unrotated.x - roundedLeft) / editor.zoom;
+            const pixelY = (unrotated.y - roundedTop) / editor.zoom;
+            const clampedX = Math.max(0, Math.min(editor.customMap.width, pixelX));
+            const clampedY = Math.max(0, Math.min(editor.customMap.height, pixelY));
+            return { x: clampedX, y: clampedY };
+        }
+
+        function markersFitZoom(zoomLevel, centerLatLng) {
+            const placedPhotos = getPlacedPhotos();
+            if (!placedPhotos.length) {
+                return false;
+            }
+            const geometry = getGeometryFor(zoomLevel, centerLatLng);
+            const centerX = geometry.baseWidth / 2;
+            const centerY = geometry.baseHeight / 2;
+            const margin = Math.max(24, editor.markerSize * 0.55);
+
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minY = Infinity;
+            let maxY = -Infinity;
+
+            placedPhotos.forEach((photo) => {
+                const world = latLonToWorldPixel(photo.gps.latitude, photo.gps.longitude, zoomLevel);
+                let px = world.x - geometry.left;
+                let py = world.y - geometry.top;
+                const rotated = rotatePoint(px, py, centerX, centerY, -editor.heading);
+                const screenX = rotated.x - geometry.cropLeft;
+                const screenY = rotated.y - geometry.cropTop;
+                minX = Math.min(minX, screenX);
+                maxX = Math.max(maxX, screenX);
+                minY = Math.min(minY, screenY);
+                maxY = Math.max(maxY, screenY);
+            });
+
+            return (
+                minX >= margin &&
+                maxX <= geometry.viewportWidth - margin &&
+                minY >= margin &&
+                maxY <= geometry.viewportHeight - margin
+            );
+        }
+
+        function clampCustomCenter(center) {
+            if (!editor.customMap.ready) {
+                return center;
+            }
+            return {
+                x: Math.max(0, Math.min(editor.customMap.width, center.x)),
+                y: Math.max(0, Math.min(editor.customMap.height, center.y))
+            };
+        }
+
+        function fitToCustomImage() {
+            if (!editor.customMap.ready) {
+                return;
+            }
+            const size = getViewportSize();
+            const rotated = computeBaseSize(
+                editor.customMap.width,
+                editor.customMap.height,
+                editor.heading
+            );
+            const scaleX = size.width / rotated.width;
+            const scaleY = size.height / rotated.height;
+            editor.zoom = Math.min(CUSTOM_MAX_ZOOM, Math.max(CUSTOM_MIN_ZOOM, Math.min(scaleX, scaleY)));
+            editor.center = {
+                x: editor.customMap.width / 2,
+                y: editor.customMap.height / 2
+            };
+        }
+
+        function fitToCustomView() {
+            if (!editor.customMap.ready) {
+                return;
+            }
+            const visiblePhotos = getVisiblePhotos();
+            if (!visiblePhotos.length) {
+                fitToCustomImage();
+                return;
+            }
+
+            const firstPixel = getDisplayPixel(visiblePhotos[0]);
+            if (!firstPixel) {
+                fitToCustomImage();
+                return;
+            }
+            let minX = firstPixel.x;
+            let maxX = firstPixel.x;
+            let minY = firstPixel.y;
+            let maxY = firstPixel.y;
+
+            visiblePhotos.forEach((photo) => {
+                const pixel = getDisplayPixel(photo);
+                if (!pixel) {
+                    return;
+                }
+                minX = Math.min(minX, pixel.x);
+                maxX = Math.max(maxX, pixel.x);
+                minY = Math.min(minY, pixel.y);
+                maxY = Math.max(maxY, pixel.y);
+            });
+
+            const size = getViewportSize();
+            const margin = Math.max(24, editor.markerSize * 0.55);
+            let width = Math.max(1e-6, maxX - minX);
+            let height = Math.max(1e-6, maxY - minY);
+            if (editor.heading) {
+                const rotated = computeBaseSize(width, height, editor.heading);
+                width = rotated.width;
+                height = rotated.height;
+            }
+            const scaleX = (size.width - margin * 2) / width;
+            const scaleY = (size.height - margin * 2) / height;
+            editor.zoom = Math.min(CUSTOM_MAX_ZOOM, Math.max(CUSTOM_MIN_ZOOM, Math.min(scaleX, scaleY)));
+            editor.center = clampCustomCenter({
+                x: (minX + maxX) / 2,
+                y: (minY + maxY) / 2
+            });
+        }
+
+        function fitToMarkers() {
+            if (isCustomMode()) {
+                fitToCustomView();
+                scheduleEditorRender();
+                return;
+            }
+            const placedPhotos = getPlacedPhotos();
+            if (!placedPhotos.length) {
+                return;
+            }
+            const size = getViewportSize();
+            const padding = 0.95;
+
+            let minLat = placedPhotos[0].gps.latitude;
+            let maxLat = placedPhotos[0].gps.latitude;
+            let minLon = placedPhotos[0].gps.longitude;
+            let maxLon = placedPhotos[0].gps.longitude;
+
+            placedPhotos.forEach((photo) => {
+                const lat = photo.gps.latitude;
+                const lon = photo.gps.longitude;
+                minLat = Math.min(minLat, lat);
+                maxLat = Math.max(maxLat, lat);
+                minLon = Math.min(minLon, lon);
+                maxLon = Math.max(maxLon, lon);
+            });
+
+            const p1 = latLonToWorldPixel(minLat, minLon, 0);
+            const p2 = latLonToWorldPixel(maxLat, maxLon, 0);
+            const minX = Math.min(p1.x, p2.x);
+            const maxX = Math.max(p1.x, p2.x);
+            const minY = Math.min(p1.y, p2.y);
+            const maxY = Math.max(p1.y, p2.y);
+
+            const dx = Math.max(1e-6, maxX - minX);
+            const dy = Math.max(1e-6, maxY - minY);
+            const scaleX = (size.width * padding) / dx;
+            const scaleY = (size.height * padding) / dy;
+            let targetZoom = Math.ceil(Math.log2(Math.min(scaleX, scaleY)));
+
+            if (placedPhotos.length === 1) {
+                targetZoom = Math.max(targetZoom, 19);
+            }
+
+            const centerWorldX = (minX + maxX) / 2;
+            const centerWorldY = (minY + maxY) / 2;
+            const centerLatLng = worldPixelToLatLon(centerWorldX, centerWorldY, 0);
+
+            targetZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, targetZoom));
+            while (targetZoom > MIN_ZOOM && !markersFitZoom(targetZoom, centerLatLng)) {
+                targetZoom -= 1;
+            }
+
+            editor.zoom = targetZoom;
+            editor.center = centerLatLng;
+            scheduleEditorRender();
+        }
+
+        function normalizeHeading(value) {
+            let nextHeading = Number(value);
+            while (nextHeading < 0) {
+                nextHeading += 360;
+            }
+            while (nextHeading > 360) {
+                nextHeading -= 360;
+            }
+            return nextHeading;
+        }
+
+        function applyHeading(value) {
+            const nextHeading = normalizeHeading(value);
+            editor.heading = nextHeading;
+            if (isCustomMode()) {
+                editor.customHeading = nextHeading;
+            } else {
+                editor.tileHeading = nextHeading;
+            }
+            rotationInput.value = editor.heading;
+            rotationValue.textContent = `${editor.heading}deg`;
+            scheduleEditorRender();
+            scheduleOverrideSave();
+        }
+
+        function applyMarkerSize(value) {
+            editor.markerSize = Number(value);
+            markerSizeInput.value = editor.markerSize;
+            markerSizeValue.textContent = `${editor.markerSize}px`;
+            updateMarkerStyles();
+            scheduleOverrideSave();
+        }
+
+        function clampZoom(value) {
+            return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+        }
+
+        function clampCustomZoom(value) {
+            return Math.min(CUSTOM_MAX_ZOOM, Math.max(CUSTOM_MIN_ZOOM, value));
+        }
+
+        function zoomBy(delta) {
+            if (isCustomMode()) {
+                const factor = delta > 0 ? CUSTOM_ZOOM_STEP : 1 / CUSTOM_ZOOM_STEP;
+                editor.zoom = clampCustomZoom(editor.zoom * factor);
+            } else {
+                editor.zoom = clampZoom(editor.zoom + delta);
+            }
+            scheduleEditorRender();
+        }
+
+        function buildMarkerElement(index) {
+            const marker = document.createElement("div");
+            marker.className = "marker";
+            const label = document.createElement("span");
+            label.textContent = String(index + 1);
+            marker.appendChild(label);
+            markerLayer.appendChild(marker);
+            if (isCustomMode() && editor.mode !== MODE_ADJUST) {
+                marker.classList.add("plot-locked");
+            }
+
+            marker.addEventListener("pointerdown", (event) => {
+                if (isCustomMode() && editor.mode !== MODE_ADJUST) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                selectPhoto(index);
+                const mapRect = editorViewport.getBoundingClientRect();
+                const markerRect = marker.getBoundingClientRect();
+                const centerX = markerRect.left - mapRect.left + markerRect.width / 2;
+                const centerY = markerRect.top - mapRect.top + markerRect.height / 2;
+                editor.markerDrag = {
+                    index,
+                    pointerId: event.pointerId,
+                    offsetX: event.clientX - mapRect.left - centerX,
+                    offsetY: event.clientY - mapRect.top - centerY
+                };
+                marker.classList.add("dragging");
+                marker.setPointerCapture(event.pointerId);
+            });
+
+            marker.addEventListener("pointermove", (event) => {
+                if (!editor.markerDrag || editor.markerDrag.index !== index) {
+                    return;
+                }
+                const mapRect = editorViewport.getBoundingClientRect();
+                const targetX = event.clientX - mapRect.left - editor.markerDrag.offsetX;
+                const targetY = event.clientY - mapRect.top - editor.markerDrag.offsetY;
+                const photo = editor.photos[index];
+                if (isCustomMode()) {
+                    const pixel = screenToCustomPixel(targetX, targetY);
+                    if (!pixel) {
+                        return;
+                    }
+                    photo.pixel = pixel;
+                    photo.autoCommitted = false;
+                    photo.autoPixel = null;
+                    if (getCalibrationPixel(photo)) {
+                        photo.calibrationPixel = { x: pixel.x, y: pixel.y };
+                    }
+                } else {
+                    const newGps = screenToLatLon(targetX, targetY);
+                    if (!photo.gps) {
+                        photo.gps = { latitude: newGps.lat, longitude: newGps.lng, altitude: null };
+                    } else {
+                        photo.gps.latitude = newGps.lat;
+                        photo.gps.longitude = newGps.lng;
+                    }
+                    photo.has_override = true;
+                }
+                updateMarkerPositions(editor.geometry || getGeometry());
+            });
+
+            marker.addEventListener("pointerup", () => {
+                if (editor.markerDrag && editor.markerDrag.index === index) {
+                    editor.markerDrag = null;
+                    marker.classList.remove("dragging");
+                    const photo = editor.photos[index];
+                    if (photo) {
+                        if (isCustomMode()) {
+                            photo.autoCommitted = false;
+                        } else {
+                            photo.has_override = true;
+                        }
+                    }
+                    setEditorStatus(`Marker ${index + 1} updated.`);
+                    renderPhotoList();
+                    scheduleOverrideSave();
+                }
+            });
+
+            marker.addEventListener("pointercancel", () => {
+                if (editor.markerDrag && editor.markerDrag.index === index) {
+                    editor.markerDrag = null;
+                    marker.classList.remove("dragging");
+                }
+            });
+
+            return marker;
+        }
+
+        function ensureMarkerForPhoto(index) {
+            if (editor.markerElements[index]) {
+                return;
+            }
+            const marker = buildMarkerElement(index);
+            editor.markerElements[index] = marker;
+            updateMarkerStyles();
+            updateMarkerPositions(editor.geometry || getGeometry());
+        }
+
+        function placePhotoAt(index, x, y) {
+            const photo = editor.photos[index];
+            if (!photo) {
+                return;
+            }
+            if (isCustomMode()) {
+                const pixel = screenToCustomPixel(x, y);
+                if (!pixel) {
+                    setEditorStatus("Custom image not ready.", true);
+                    return;
+                }
+                photo.pixel = pixel;
+                photo.autoCommitted = false;
+                if (isCalibrateMode() && isEligibleGps(photo)) {
+                    photo.calibrationPixel = { x: pixel.x, y: pixel.y };
+                }
+                photo.autoPixel = null;
+                if (isCalibrateMode()) {
+                    updateAutoplot();
+                }
+            } else {
+                const newGps = screenToLatLon(x, y);
+                photo.gps = {
+                    latitude: newGps.lat,
+                    longitude: newGps.lng,
+                    altitude: photo.gps ? photo.gps.altitude : null
+                };
+                photo.has_override = true;
+            }
+            ensureMarkerForPhoto(index);
+            advanceSelectionAfterPlacement(index);
+            scheduleOverrideSave();
+        }
+
+        function createMarkers() {
+            markerLayer.innerHTML = "";
+            editor.markerElements = new Array(editor.photos.length).fill(null);
+            editor.photos.forEach((photo, index) => {
+                if (isCustomMode()) {
+                    if (!getDisplayPixel(photo)) {
+                        return;
+                    }
+                } else if (!isPhotoPlaced(photo)) {
+                    return;
+                }
+                editor.markerElements[index] = buildMarkerElement(index);
+            });
+            updateMarkerInteractivity();
+        }
+
+        function startMapDrag(event) {
+            if (editor.markerDrag) {
+                return;
+            }
+            const startCenter = isCustomMode()
+                ? { x: editor.center.x, y: editor.center.y }
+                : latLonToWorldPixel(editor.center.lat, editor.center.lng, editor.zoom);
+            editor.mapDrag = {
+                startX: event.clientX,
+                startY: event.clientY,
+                startCenter,
+                pointerId: event.pointerId,
+                moved: false
+            };
+            editorViewport.setPointerCapture(event.pointerId);
+            editorViewport.classList.add("dragging");
+        }
+
+        function updateMapDrag(event) {
+            if (!editor.mapDrag) {
+                return;
+            }
+            const deltaX = event.clientX - editor.mapDrag.startX;
+            const deltaY = event.clientY - editor.mapDrag.startY;
+            if (!editor.mapDrag.moved && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
+                editor.mapDrag.moved = true;
+            }
+            if (isCustomMode()) {
+                const mapDelta = rotateVector(deltaX, deltaY, editor.heading);
+                const newCenter = {
+                    x: editor.mapDrag.startCenter.x - mapDelta.x / editor.zoom,
+                    y: editor.mapDrag.startCenter.y - mapDelta.y / editor.zoom
+                };
+                editor.center = clampCustomCenter(newCenter);
+            } else {
+                const mapDelta = rotateVector(deltaX, deltaY, editor.heading);
+                const newWorldX = editor.mapDrag.startCenter.x - mapDelta.x;
+                const newWorldY = editor.mapDrag.startCenter.y - mapDelta.y;
+                editor.center = worldPixelToLatLon(newWorldX, newWorldY, editor.zoom);
+            }
+            scheduleEditorRender();
+        }
+
+        function handleMapClick(event) {
+            if (editor.selectedIndex === null || editor.selectedIndex >= editor.photos.length) {
+                setEditorStatus("Select a photo to place a marker.", true);
+                return;
+            }
+            const photo = editor.photos[editor.selectedIndex];
+            if (photo && isPhotoPlaced(photo) && !(isCustomMode() && isCalibrateMode())) {
+                return;
+            }
+            const mapRect = editorViewport.getBoundingClientRect();
+            const targetX = event.clientX - mapRect.left;
+            const targetY = event.clientY - mapRect.top;
+            placePhotoAt(editor.selectedIndex, targetX, targetY);
+        }
+
+        function endMapDrag(event) {
+            if (!editor.mapDrag) {
+                return;
+            }
+            const wasClick = !editor.mapDrag.moved;
+            try {
+                editorViewport.releasePointerCapture(editor.mapDrag.pointerId);
+            } catch (err) {
+                // Ignore pointer capture release failures.
+            }
+            editor.mapDrag = null;
+            editorViewport.classList.remove("dragging");
+            if (wasClick && event) {
+                handleMapClick(event);
+            }
+        }
+
+        function computeExportSize() {
+            const rect = editorViewport.getBoundingClientRect();
+            if (!rect.width || !rect.height) {
+                return { width: EXPORT_MAX_DIM, height: EXPORT_MAX_DIM };
+            }
+            const aspect = rect.width / rect.height;
+            if (aspect >= 1) {
+                return { width: EXPORT_MAX_DIM, height: Math.round(EXPORT_MAX_DIM / aspect) };
+            }
+            return { width: Math.round(EXPORT_MAX_DIM * aspect), height: EXPORT_MAX_DIM };
+        }
+
+        function buildExportPayload() {
+            const exportPhotos = getExportPhotos();
+            if (!exportPhotos.length) {
+                return null;
+            }
+            const viewport = getViewportSize();
+            if (isCustomMode()) {
+                if (!editor.customMap.path) {
+                    return null;
+                }
+                return {
+                    map_source: MAP_SOURCE_CUSTOM,
+                    custom_image_path: editor.customMap.path,
+                    custom_map_path: editor.customMap.path,
+                    marker_size: editor.markerSize,
+                    viewport_width: viewport.width,
+                    viewport_height: viewport.height,
+                    custom_zoom: editor.zoom,
+                    heading: editor.heading,
+                    project_name: projectNameInput.value.trim() || "Photo Map",
+                    proposal_link: proposalLinkInput.value.trim(),
+                    client_name: clientNameInput ? clientNameInput.value.trim() : "",
+                    client_company: clientCompanyInput ? clientCompanyInput.value.trim() : "",
+                    client_address: clientAddressInput ? clientAddressInput.value.trim() : "",
+                    compression_quality: Number(qualityInput.value),
+                    custom_markers: exportPhotos.map((photo) => {
+                        const pixel = getDisplayPixel(photo);
+                        return {
+                            filepath: photo.filepath,
+                            x: pixel.x,
+                            y: pixel.y
+                        };
+                    })
+                };
+            }
+            const size = computeExportSize();
+            return {
+                map_source: MAP_SOURCE_TILES,
+                map_state: {
+                    center: { lat: editor.center.lat, lng: editor.center.lng },
+                    zoom: editor.zoom,
+                    heading: editor.heading,
+                    width: size.width,
+                    height: size.height
+                },
+                marker_size: editor.markerSize,
+                viewport_width: viewport.width,
+                viewport_height: viewport.height,
+                heading: editor.heading,
+                project_name: projectNameInput.value.trim() || "Photo Map",
+                proposal_link: proposalLinkInput.value.trim(),
+                client_name: clientNameInput ? clientNameInput.value.trim() : "",
+                client_company: clientCompanyInput ? clientCompanyInput.value.trim() : "",
+                client_address: clientAddressInput ? clientAddressInput.value.trim() : "",
+                compression_quality: Number(qualityInput.value),
+                markers: exportPhotos.map((photo) => ({
+                    filepath: photo.filepath,
+                    latitude: photo.gps.latitude,
+                    longitude: photo.gps.longitude,
+                    altitude: photo.gps.altitude || null
+                }))
+            };
+        }
+
+        function scheduleOverrideSave() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            if (editor.overrideTimer) {
+                clearTimeout(editor.overrideTimer);
+            }
+            editor.overrideTimer = setTimeout(() => {
+                editor.overrideTimer = null;
+                if (window.getEditorState) {
+                    window.pywebview.api.save_overrides(window.getEditorState());
+                }
+            }, 500);
+        }
+
+        async function exportHtml() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            exportBtn.disabled = true;
+            try {
+                const unplacedNonGps = getUnplacedNonGpsPhotos();
+                if (unplacedNonGps.length) {
+                    const ok = await showConfirm({
+                        title: "Unplaced photos",
+                        message: `${unplacedNonGps.length} photos without GPS are still unplaced and will be skipped in the export. Continue?`,
+                        acceptLabel: "Export anyway"
+                    });
+                    if (!ok) {
+                        setEditorStatus("Export cancelled.");
+                        return;
+                    }
+                }
+                setEditorStatus("Building interactive image...");
+                const payload = buildExportPayload();
+                if (!payload) {
+                    setEditorStatus("No placed photos to export.", true);
+                    return;
+                }
+                const result = await window.pywebview.api.export_html(payload);
+                if (result && result.status === "ok") {
+                    setEditorStatus(`Interactive image exported: ${result.path}`);
+                } else if (result && result.status === "cancel") {
+                    setEditorStatus("Export cancelled.");
+                } else if (result && result.status === "error") {
+                    setEditorStatus(`Export failed: ${result.message || "unknown error"}`, true);
+                } else {
+                    setEditorStatus("Export failed.", true);
+                }
+            } catch (err) {
+                setEditorStatus("Export failed.", true);
+            } finally {
+                exportBtn.disabled = false;
+            }
+        }
+
+        async function closeEditor() {
+            if (window.pywebview && window.pywebview.api) {
+                try {
+                    if (window.getEditorState) {
+                        const payload = window.getEditorState();
+                        if (payload) {
+                            await window.pywebview.api.save_overrides(payload);
+                        }
+                    }
+                } catch (err) {
+                    // Ignore save failures on close.
+                }
+            }
+            setView("main");
+            refreshPhotoList();
+        }
+
+        window.getEditorState = function() {
+            const placedPhotos = getPlacedPhotos();
+            const adjustPlacedPhotos = getAdjustPlacedPhotos();
+            const payload = {
+                marker_size: editor.markerSize,
+                heading: editor.tileHeading,
+                custom_heading: editor.customHeading,
+                map_source: editor.mapMode
+            };
+            if (editor.customMap.path) {
+                payload.custom_map_path = editor.customMap.path;
+            }
+            if (isCustomMode()) {
+                payload.custom_markers = adjustPlacedPhotos.map((photo) => ({
+                    filepath: photo.filepath,
+                    x: photo.pixel.x,
+                    y: photo.pixel.y
+                }));
+            } else {
+                payload.markers = placedPhotos.map((photo) => ({
+                    filepath: photo.filepath,
+                    latitude: photo.gps.latitude,
+                    longitude: photo.gps.longitude,
+                    altitude: photo.gps.altitude || null
+                }));
+            }
+            return payload;
+        };
+
+        function editorLoad(payload, mapMode, customSelection) {
+            editor.photos = (payload.photos || []).map((photo) => ({
+                filepath: photo.filepath,
+                filename: photo.filename,
+                display_name: photo.display_name || photo.filename,
+                custom_name: photo.custom_name || "",
+                note: photo.note || "",
+                gps: photo.gps ? { ...photo.gps } : null,
+                originalGps: photo.gps ? { ...photo.gps } : null,
+                pixel: photo.pixel ? { ...photo.pixel } : null,
+                calibrationPixel: photo.pixel ? { ...photo.pixel } : null,
+                autoPixel: null,
+                autoCommitted: false,
+                has_gps: Boolean(photo.has_gps),
+                has_override: Boolean(photo.has_override),
+                group_id: photo.group_id || "default",
+                group_color: photo.group_color || "default"
+            }));
+            editor.markerSize = payload.marker_size || editor.markerSize;
+            editor.mapMode = mapMode || MAP_SOURCE_TILES;
+            const payloadHeading = Number(payload.heading);
+            if (Number.isFinite(payloadHeading)) {
+                editor.tileHeading = payloadHeading;
+            }
+            const payloadCustomHeading = Number(payload.custom_heading);
+            if (Number.isFinite(payloadCustomHeading)) {
+                editor.customHeading = payloadCustomHeading;
+            } else if (Number.isFinite(payloadHeading)) {
+                editor.customHeading = payloadHeading;
+            }
+            editor.heading = editor.mapMode === MAP_SOURCE_CUSTOM ? editor.customHeading : editor.tileHeading;
+            editor.mode = MODE_PLOT;
+            editor.modeLocked = false;
+            editor.autoplotEnabled = true;
+            editor.autoplotTransform = null;
+            editor.autoplotError = "";
+            setCustomMapInfo(editor.mapMode === MAP_SOURCE_CUSTOM ? customSelection : null);
+            setEditorModeUI();
+
+            if (editor.mapMode === MAP_SOURCE_CUSTOM && customSelection && !customSelection.fromPayload) {
+                editor.photos.forEach((photo) => {
+                    photo.pixel = null;
+                    photo.autoPixel = null;
+                    photo.calibrationPixel = null;
+                    photo.autoCommitted = false;
+                });
+            }
+
+            const placedPhotos = getPlacedPhotos();
+            if (editor.mapMode === MAP_SOURCE_CUSTOM) {
+                editor.zoom = 1;
+                editor.center = { x: 0, y: 0 };
+            } else if (placedPhotos.length) {
+                editor.zoom = 19;
+                editor.center = {
+                    lat: placedPhotos[0].gps.latitude,
+                    lng: placedPhotos[0].gps.longitude
+                };
+            } else {
+                editor.zoom = 3;
+                editor.center = { lat: 0, lng: 0 };
+            }
+
+            const nextTarget = getNextTargetIndex();
+            if (nextTarget !== null && nextTarget !== undefined) {
+                editor.selectedIndex = nextTarget;
+            } else {
+                editor.selectedIndex = editor.photos.length ? 0 : null;
+            }
+
+            markerSizeInput.value = editor.markerSize;
+            markerSizeValue.textContent = `${editor.markerSize}px`;
+            rotationInput.value = editor.heading;
+            rotationValue.textContent = `${editor.heading}deg`;
+
+            createMarkers();
+            if (!isCustomMode() && (nextTarget === null || nextTarget === undefined)) {
+                editor.mode = MODE_ADJUST;
+                editor.modeLocked = true;
+            }
+            updateModeUI();
+            updateMarkerInteractivity();
+            renderPhotoList();
+            if (editor.mapMode === MAP_SOURCE_CUSTOM) {
+                setEditorStatus("Loading custom image...");
+                loadCustomMap().then((loaded) => {
+                    if (!loaded) {
+                        setEditorStatus("Custom image failed to load.", true);
+                        return;
+                    }
+                    updateAutoplot();
+                    if (getPlacedPhotos().length) {
+                        fitToMarkers();
+                    } else {
+                        fitToCustomImage();
+                        scheduleEditorRender();
+                    }
+                    scheduleEditorRender();
+                    if (getPlacedPhotos().length) {
+                        setEditorStatus("Custom image ready. Drag to pan, scroll to zoom, drag markers to adjust.");
+                    } else {
+                        setEditorStatus("Custom image ready. Select a photo and click to place a marker.");
+                    }
+                    scheduleOverrideSave();
+                });
+                return;
+            }
+
+            if (placedPhotos.length) {
+                fitToMarkers();
+            }
+            scheduleEditorRender();
+            if (placedPhotos.length) {
+                if (state.apiKey) {
+                    setEditorStatus("Map ready. Drag to pan, scroll to zoom, drag markers to adjust.");
+                } else {
+                    setEditorStatus("Map ready (no API key set). Drag to pan, scroll to zoom.", true);
+                }
+            } else {
+                if (state.apiKey) {
+                    setEditorStatus("Select a photo and click the map to place a marker.");
+                } else {
+                    setEditorStatus("No GPS data yet. Set an API key, pan the map, then click to place.", true);
+                }
+            }
+        }
+
+        async function changeCustomImage() {
+            if (!isCustomMode()) {
+                return;
+            }
+            const selection = await requestCustomMapImage();
+            if (!selection) {
+                return;
+            }
+            const changed = editor.customMap.path && editor.customMap.path !== selection.path;
+            setCustomMapInfo(selection);
+            setEditorModeUI();
+            setEditorStatus("Loading custom image...");
+            const loaded = await loadCustomMap();
+            if (!loaded) {
+                setEditorStatus("Custom image failed to load.", true);
+                return;
+            }
+            if (changed) {
+                editor.photos.forEach((photo) => {
+                    photo.pixel = null;
+                    photo.autoPixel = null;
+                    photo.calibrationPixel = null;
+                    photo.autoCommitted = false;
+                });
+                resetEditorMode();
+            }
+            updateAutoplot();
+            fitToCustomView();
+            scheduleEditorRender();
+            setEditorStatus("Custom image updated.");
+            scheduleOverrideSave();
+        }
+
+        markerSizeInput.addEventListener("input", (event) => {
+            applyMarkerSize(event.target.value);
+        });
+
+        rotationInput.addEventListener("input", (event) => {
+            applyHeading(event.target.value);
+        });
+
+        rotateLeftBtn.addEventListener("click", () => {
+            applyHeading(editor.heading - 90);
+        });
+
+        rotateRightBtn.addEventListener("click", () => {
+            applyHeading(editor.heading + 90);
+        });
+
+        document.getElementById("zoom-in").addEventListener("click", () => zoomBy(1));
+        document.getElementById("zoom-out").addEventListener("click", () => zoomBy(-1));
+        document.getElementById("fit").addEventListener("click", fitToMarkers);
+        exportBtn.addEventListener("click", exportHtml);
+        if (customImageSelectBtn) {
+            customImageSelectBtn.addEventListener("click", changeCustomImage);
+        }
+        document.getElementById("close-editor").addEventListener("click", closeEditor);
+        if (resetEditorBtn) {
+            resetEditorBtn.addEventListener("click", resetEditorPlacements);
+        }
+        if (modePlotBtn && modeAdjustBtn) {
+            modePlotBtn.addEventListener("click", () => setEditorMode(MODE_PLOT));
+            modeAdjustBtn.addEventListener("click", () => setEditorMode(MODE_ADJUST));
+        }
+
+        editorViewport.addEventListener("pointerdown", (event) => {
+            if (event.button !== 0) {
+                return;
+            }
+            startMapDrag(event);
+        });
+
+        editorViewport.addEventListener("pointermove", (event) => {
+            updateMapDrag(event);
+        });
+
+        editorViewport.addEventListener("pointerup", (event) => endMapDrag(event));
+        editorViewport.addEventListener("pointerleave", () => endMapDrag());
+        editorViewport.addEventListener("pointercancel", () => endMapDrag());
+
+        editorViewport.addEventListener("wheel", (event) => {
+            event.preventDefault();
+            const delta = event.deltaY < 0 ? 1 : -1;
+            zoomBy(delta);
+        }, { passive: false });
+
+        window.addEventListener("resize", () => {
+            if (editorView.classList.contains("active")) {
+                scheduleEditorRender();
+            }
+        });
+    </script>
+</body>
+</html>
