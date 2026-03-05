@@ -7,8 +7,8 @@ Auto-plot Google satellite imagery from your geotagged photos, then export KMZ o
 ## Quick Start
 
 1. Double-click `PicPlotterAuto.exe`
-2. (Optional) Enter your Google Maps API key on the main screen and click \"Save\"
-3. Click \"Select Photos\" and choose your images
+2. (Optional) Enter your Google Maps API key on the main screen and click "Save"
+3. Click "Import Photos" to select local images, or "Import from Drive" to load from a shared Google Drive folder
 4. Click "Open Map Editor" to load the tile preview and markers
 5. Adjust marker size, drag markers, and rotate the view if needed
 6. Export the HTML deliverable from the map editor
@@ -19,6 +19,7 @@ Auto-plot Google satellite imagery from your geotagged photos, then export KMZ o
 - **Google satellite editor** - tile preview matches export, rotate, pan, and adjust markers live
 - **Manual marker corrections** - drag markers to fine-tune placement
 - **Manual placement for any photo** - click the map to place non-GPS photos
+- **Google Drive import** - load photos from a shared Drive folder; web deploys reference images by URL (no download/re-upload)
 - **KMZ and HTML outputs** - Google Earth Pro and client-ready HTML
 - **Deploy to Web** - instantly deploy interactive maps to Netlify and share a link with clients
 - **Modern dark UI** - single-window experience
@@ -26,7 +27,7 @@ Auto-plot Google satellite imagery from your geotagged photos, then export KMZ o
 
 ## Requirements
 
-- Windows 10 or 11
+- Windows 10 or 11 (macOS also supported)
 - Google Earth Pro (free) to view KMZ files
 - Photos with GPS location data (taken with location services enabled)
 - Google Maps API key (optional, recommended for editor tile access)
@@ -41,6 +42,25 @@ PicPlotter Auto can use a Google Maps API key to fetch editor tiles.
 - Enter the key on the main PicPlotter screen and click "Save".
 - The key is stored at `~/.picplotter_auto/config.json`.
 - You can also set `GOOGLE_MAPS_API_KEY` as an environment variable.
+
+## Google Drive Import
+
+Import photos directly from a shared Google Drive folder instead of downloading them first.
+
+### One-Time Setup
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com) (same project as your Maps API key)
+2. Enable the **Google Drive API**
+3. Update your API key restrictions to allow the Drive API (if restricted)
+
+### Usage
+
+1. Share the Drive folder as "Anyone with the link"
+2. In PicPlotter, click "Import from Drive"
+3. Paste the folder sharing URL and click Import
+4. Photos appear with thumbnails and GPS markers
+
+**Web deploys** reference photos by URL - no downloading or re-uploading needed, making deployment fast and lightweight. **Local HTML and KMZ exports** automatically download the photos to produce self-contained files.
 
 ## Deploy to Web (Netlify)
 
@@ -107,6 +127,11 @@ The HTML map features:
 - In Google Earth Pro: Tools -> Options -> General
 - Enable "Allow placemark balloons to access local data"
 
+**Drive import fails**
+- Ensure the folder is shared as "Anyone with the link"
+- Verify the Google Drive API is enabled on your Cloud project
+- Check that your API key restrictions allow the Drive API
+
 ## Building from Source
 
 ```bash
@@ -119,17 +144,13 @@ python build/build.py
 
 The executable will be created in the `dist` folder.
 
-## Windows Dev Helpers
+## CI/CD
 
-If you develop in WSL but run on Windows, these scripts sync and run the app:
+The GitHub Actions workflow (`.github/workflows/build.yml`) builds Windows and macOS installers on manual dispatch:
 
-```powershell
-scripts\sync_windows.ps1
-scripts\run_windows.ps1
-```
-
-Both scripts default to `\\wsl$\Ubuntu\home\rkinder9168\projects\PicPlotter_auto_gpt`
-and `C:\dev\PicPlotter_auto_gpt`. Edit the paths at the top if needed.
+1. Go to the repo's **Actions** tab
+2. Click **Build Installers** -> **Run workflow**
+3. Download installers from the created GitHub Release
 
 ## License
 

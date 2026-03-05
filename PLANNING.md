@@ -25,29 +25,27 @@ This complexity made the app impractical for general public distribution.
 - Works completely offline
 - Output files are self-contained and shareable
 
+### v3.0 - Google Drive URL References
+- Import photos from shared Google Drive folders
+- Web deployments reference photos by URL (no download/re-upload)
+- Local HTML and KMZ exports remain self-contained (download photos automatically)
+- No new Python dependencies (uses stdlib `urllib`)
+
 ---
 
-## Solution: KMZ-Based Architecture
+## Solution: Hybrid Architecture
 
-### Why KMZ?
+### KMZ + HTML Exports (Self-Contained)
+KMZ (Keyhole Markup Zip) and local HTML exports embed all images directly. For Drive-sourced photos, the app downloads them automatically before embedding.
 
-KMZ (Keyhole Markup Zip) is Google's official format for self-contained Google Earth projects:
-- It's a ZIP archive containing KML + referenced files
-- Images are embedded directly in the archive
-- No external hosting required
-- Opens natively in Google Earth Pro
-- Files can be shared via email, USB, etc.
+### Web Deploy (URL-Referenced)
+Netlify deployments reference Google Drive photos by URL, eliminating the 3-hop data flow (Drive -> local download -> app processing -> Netlify upload). The HTML contains `<img src="https://drive.google.com/thumbnail?id=...">` instead of base64-encoded data.
 
-### KMZ Structure
-```
-project.kmz
-├── doc.kml           # Map data, placemarks, styles
-└── files/
-    ├── marker.png    # Custom marker icon
-    ├── IMG_001.jpg   # Embedded photos
-    ├── IMG_002.jpg
-    └── ...
-```
+### Google Drive Integration
+- **API**: Google Drive API v3 via `urllib` (no `google-api-python-client` dependency)
+- **Auth**: Uses the same Google Maps API key (user must enable Drive API on their Cloud project)
+- **Virtual paths**: Drive photos use `gdrive://{file_id}/{filename}` as keys in state dicts
+- **Metadata**: Tries Drive API `imageMediaMetadata` first, falls back to partial download (~128KB) + Pillow EXIF extraction
 
 ---
 
@@ -59,18 +57,11 @@ project.kmz
 | GUI | pywebview (single window) | Modern UI with embedded Google tile editor |
 | Image Processing | Pillow | Industry standard, handles EXIF |
 | HEIC Support | pillow-heif | Apple photo format support |
+| Drive API | stdlib urllib | No new dependencies |
 | XML Generation | ElementTree | Built into Python |
 | Build | PyInstaller | Single-file executable |
+| CI/CD | GitHub Actions | Automated Windows/macOS builds |
 | Map Editor | Google tile renderer | Tile-based map with rotation and marker edits |
-
-### UI Notes
-- pywebview hosts the single-window HTML UI and tile-based editor.
-- Offline HTML export uses a stitched 2k snapshot (no API key required for deliverable).
-
-### Why Not Web/Electron?
-- Massive bundle size (100MB+ for Electron)
-- Overkill for a simple utility
-- Slower startup time
 
 ---
 
@@ -80,152 +71,82 @@ project.kmz
 ┌─────────────────────────────────────────────────────────────────┐
 │                    main.py (pywebview UI)                        │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
-│  │ File Select  │  │   Options    │  │    Progress/Status     │ │
-│  │   Dialog     │  │    Panel     │  │       Display          │ │
+│  │ File Select  │  │  Drive Import│  │    Progress/Status     │ │
+│  │   Dialog     │  │  URL Input   │  │       Display          │ │
 │  └──────────────┘  └──────────────┘  └────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
                               │
-                              ▼
+                    ┌─────────┴──────────┐
+                    ▼                    ▼
+          ┌─────────────────┐  ┌─────────────────┐
+          │  Local Photos   │  │  Drive Photos   │
+          │ (file on disk)  │  │ (virtual path)  │
+          └────────┬────────┘  └────────┬────────┘
+                   │                    │
+                   ▼                    ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Processing Pipeline                          │
 │                                                                 │
 │  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────┐ │
-│  │ exif_extractor  │───▶│ image_processor │───▶│kmz_generator│ │
+│  │ exif_extractor  │───▶│ image_processor │───▶│   export    │ │
 │  │                 │    │                 │    │             │ │
-│  │ - Read EXIF     │    │ - HEIC→JPG      │    │ - Build KML │ │
-│  │ - Extract GPS   │    │ - Fix rotation  │    │ - Embed imgs│ │
-│  │ - Get timestamp │    │ - Resize        │    │ - Create ZIP│ │
-│  └─────────────────┘    │ - Compress      │    └─────────────┘ │
+│  │ - Read EXIF     │    │ - HEIC→JPG      │    │ - KMZ       │ │
+│  │ - Extract GPS   │    │ - Fix rotation  │    │ - HTML      │ │
+│  │ - From bytes    │    │ - Resize        │    │ - Netlify   │ │
+│  └─────────────────┘    │ - From bytes    │    └─────────────┘ │
 │                         └─────────────────┘                     │
+│  ┌─────────────────┐                                            │
+│  │ google_drive    │  (Drive photos only)                       │
+│  │ - List folder   │                                            │
+│  │ - Get URLs      │  Web deploy: image_url (no download)       │
+│  │ - Fetch bytes   │  Local export: fetch + process_image_bytes │
+│  └─────────────────┘                                            │
 └─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────┐
-                    │   output.kmz    │
-                    │  (ZIP archive)  │
-                    └─────────────────┘
 ```
 
 ---
 
-## Module Design
+## Google Drive Data Flow
 
-### exif_extractor.py
-
-**Purpose**: Extract GPS and timestamp from photo EXIF data
-
-**Key Classes**:
-- `GPSCoordinates` - Dataclass with lat, lon, altitude
-- `ImageMetadata` - Dataclass with GPS + timestamp
-
-**Key Functions**:
-- `get_image_metadata(path)` → `ImageMetadata`
-- `is_supported_format(path)` → `bool`
-
-**Design Notes**:
-- Uses Pillow's built-in EXIF parsing
-- Handles GPS stored as rationals (degrees/minutes/seconds)
-- Returns `None` for missing GPS gracefully
-
-### image_processor.py
-
-**Purpose**: Convert and optimize images for KMZ embedding
-
-**Key Class**: `ImageProcessor`
-
-**Processing Steps**:
-1. Open image (Pillow handles HEIC via pillow-heif plugin)
-2. Apply EXIF orientation (rotate/flip to correct orientation)
-3. Convert to RGB (handle RGBA, P mode transparency)
-4. Resize if exceeds max dimension (maintain aspect ratio)
-5. Compress as JPEG
-
-**Design Notes**:
-- EXIF orientation is applied, then stripped (prevents double-rotation)
-- Uses LANCZOS resampling for high-quality resize
-- Transparency converted to white background
-
-### kmz_generator.py
-
-**Purpose**: Generate KML/KMZ with embedded images
-
-**Key Class**: `KMZGenerator`
-
-**Key Function**: `create_kmz_from_files()` - High-level convenience function
-
-**KML Structure**:
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>
-    <name>Project Name</name>
-    <Style id="photoStyle">
-      <IconStyle>
-        <Icon><href>files/marker_outlined_transparent.png</href></Icon>
-      </IconStyle>
-      <BalloonStyle>
-        <text>$[description]</text>
-      </BalloonStyle>
-    </Style>
-    <Folder>
-      <name>Photos</name>
-      <Placemark>
-        <name>1</name>
-        <description><![CDATA[<img src="files/photo.jpg" .../>]]></description>
-        <styleUrl>#photoStyle</styleUrl>
-        <Point><coordinates>lon,lat,alt</coordinates></Point>
-        <TimeStamp><when>2024-01-01T12:00:00Z</when></TimeStamp>
-      </Placemark>
-      <!-- more placemarks... -->
-    </Folder>
-  </Document>
-</kml>
+### Web Deploy (fast path - no photo bytes transferred)
+```
+Drive folder URL
+  → list_folder_images() via Drive API
+  → extract metadata (GPS) from imageMediaMetadata or partial download
+  → build photo dicts with image_url = drive.google.com/thumbnail?id=...
+  → generate HTML referencing URLs
+  → deploy small HTML to Netlify
 ```
 
-**Design Notes**:
-- Photos sorted chronologically before numbering
-- BalloonStyle with `$[description]` removes "Directions" links
-- CDATA placeholders used to avoid ElementTree escaping
+### Local/KMZ Export (self-contained path)
+```
+Drive folder URL
+  → list_folder_images() via Drive API
+  → extract metadata (GPS)
+  → fetch_image_bytes() for each photo
+  → process_image_bytes() (resize, compress)
+  → embed in HTML/KMZ as base64/binary
+```
 
 ---
 
-## GUI Design
+## Build Configuration
 
-### Layout
-```
-┌────────────────────────────────────────────────────────────┐
-│                      PicPlotter v2.0                       │
-├────────────────────────────────────────────────────────────┤
-│  [Select Photos]                                           │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │ ✓ IMG_001.jpg                                        │  │
-│  │ ✓ IMG_002.heic                                       │  │
-│  │ ✗ IMG_003.jpg (No GPS)                               │  │
-│  │ ✓ IMG_004.jpg                                        │  │
-│  └──────────────────────────────────────────────────────┘  │
-│  Selected: 4 photos (3 with GPS)                           │
-├────────────────────────────────────────────────────────────┤
-│  Options                                                   │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │ Project Name: [My Trip                            ]  │  │
-│  │ Quality: [====●=====] 85%                            │  │
-│  │ Output Folder: [                    ] [Browse][Reset]│  │
-│  └──────────────────────────────────────────────────────┘  │
-├────────────────────────────────────────────────────────────┤
-│  [====================] 100%                               │
-│  Status: KMZ created successfully!                         │
-│                                                            │
-│                    [Create KMZ]                            │
-└────────────────────────────────────────────────────────────┘
+### CI (GitHub Actions)
+- Triggered manually via `workflow_dispatch`
+- Reads version from `src/__init__.py`
+- Creates GitHub Release with tag `v{version}`
+- Windows: PyInstaller `--onefile` + Inno Setup installer
+- macOS: PyInstaller `--onedir` + DMG
+
+### Local Build (Windows)
+```cmd
+cd \\wsl$\Ubuntu\home\rkinder9168\projects\PicPlotter_web_claude
+python build/build.py
 ```
 
-### User Flow
-1. Click "Select Photos" → File dialog opens
-2. Select JPG/HEIC files → List populates with GPS status
-3. Adjust options (optional)
-4. Click "Create KMZ" → Save dialog opens
-5. Choose location → Progress bar animates
-6. Done → Success message with file size
+### PyInstaller Hidden Imports
+All `src.*` modules must be listed as hidden imports, including `src.google_drive`.
 
 ---
 
@@ -233,53 +154,14 @@ project.kmz
 
 | Scenario | Handling |
 |----------|----------|
-| No GPS data | Show ✗ in list, skip photo, report in summary |
+| No GPS data | Show in list, skip from map, allow manual placement |
 | Unsupported format | Skip, add to error list |
-| HEIC read failure | Skip, add to error list |
-| All photos skipped | Show error, don't create empty KMZ |
-| File locked | Exception caught, added to error list |
-| Output path issue | Exception shown to user |
-
----
-
-## Image Size Management
-
-**Problem**: Raw photos can be 5-20MB each. A 50-photo KMZ would be 250MB+.
-
-**Solution**:
-- Resize to max 1920px (configurable)
-- JPEG compression (25-100% quality slider)
-- Result: ~100-500KB per photo
-- 50 photos → ~10-25MB KMZ
-
-**Estimate Display**: Before export, estimate is shown based on:
-```
-pixels × (0.3 + quality/100 × 0.7) bytes/pixel
-```
-
----
-
-## Build Configuration
-
-### PyInstaller Options
-```python
-args = [
-    "--onefile",           # Single executable
-    "--windowed",          # No console window
-    "--clean",             # Clean cache
-    "--hidden-import=pillow_heif",
-    "--hidden-import=PIL",
-    "--add-data=assets/marker_outlined_transparent.png;assets",
-]
-```
-
-### Why `--onefile`?
-- Simpler distribution (one file to share)
-- No DLL dependencies to manage
-- Trade-off: Slightly slower startup (unpacks to temp)
-
-### Asset Bundling
-Assets are extracted to `sys._MEIPASS` at runtime. The `get_asset_path()` function handles path resolution for both development and frozen modes.
+| Drive API not enabled | Clear error message with setup instructions |
+| Folder not shared | "Access denied" with sharing instructions |
+| Invalid API key | "Invalid API key" message |
+| Drive photo download fails | Skip photo, add to error list |
+| Partial EXIF extraction fails | Still add photo (without GPS) |
+| All photos skipped | Show error, don't create empty export |
 
 ---
 
@@ -287,13 +169,7 @@ Assets are extracted to `sys._MEIPASS` at runtime. The `get_asset_path()` functi
 
 ### Potential Enhancements (Not Currently Planned)
 - Drag-and-drop file support
-- Folder batch processing
-- Preview map before export
-- Custom placemark icons per photo
+- Google Drive OAuth for private folders (currently requires "Anyone with link")
+- Batch folder processing
 - Export to other formats (GeoJSON, GPX)
 - Photo grouping/clustering for dense areas
-
-### Known Limitations
-- Windows only (could support macOS/Linux with same codebase)
-- Requires Google Earth Pro for viewing (free download)
-- Large photos may take time to process
