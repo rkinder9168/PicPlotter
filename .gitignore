@@ -15,8 +15,9 @@ dist/
 venv/
 ENV/
 
-# PyInstaller build artifacts
-build/
+# PyInstaller build artifacts (keep build/build.py)
+build/PicPlotter*/
+build/*.pyc
 
 # IDE
 .idea/
