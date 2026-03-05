@@ -303,9 +303,12 @@ class HTMLMapGenerator:
 
         default_group = group_assignments.get_group("default") if group_assignments else None
         for i, photo in enumerate(photos):
-            # Encode photo
-            photo_b64 = base64.b64encode(photo['image_data']).decode('utf-8')
-            photo_src = f"data:image/jpeg;base64,{photo_b64}"
+            # Encode photo - support URL references or base64
+            if 'image_url' in photo:
+                photo_src = photo['image_url']
+            else:
+                photo_b64 = base64.b64encode(photo['image_data']).decode('utf-8')
+                photo_src = f"data:image/jpeg;base64,{photo_b64}"
             filepath = photo.get("filepath", "")
 
             group = group_assignments.get_group_for_photo(filepath) if group_assignments else None

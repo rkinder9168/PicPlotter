@@ -352,6 +352,49 @@ def get_image_metadata(image_path: str) -> ImageMetadata:
     )
 
 
+def get_image_metadata_from_bytes(image_data: bytes, virtual_path: str) -> ImageMetadata:
+    """
+    Extract all relevant metadata from in-memory image bytes.
+
+    Used for Drive-sourced photos where we have raw bytes instead of a file path.
+
+    Args:
+        image_data: Raw image bytes (can be a partial file for EXIF-only extraction)
+        virtual_path: Virtual path to use as the filepath (e.g. 'gdrive://id/name.jpg')
+
+    Returns:
+        ImageMetadata with all extracted information
+    """
+    import io
+
+    gps = None
+    timestamp = None
+    make = None
+    model = None
+
+    try:
+        with Image.open(io.BytesIO(image_data)) as img:
+            exif_data = _get_exif_data(img)
+            if exif_data:
+                gps = _extract_gps_from_exif(exif_data)
+                timestamp = _extract_timestamp_from_exif(exif_data)
+                make, model = _extract_camera_from_exif(exif_data)
+    except Exception as e:
+        print(f"Error extracting metadata from bytes ({virtual_path}): {e}")
+
+    # Use virtual_path parts for filepath and filename
+    filename = virtual_path.rsplit("/", 1)[-1] if "/" in virtual_path else virtual_path
+
+    return ImageMetadata(
+        filepath=Path(virtual_path),
+        filename=filename,
+        gps=gps,
+        timestamp=timestamp,
+        camera_make=make,
+        camera_model=model,
+    )
+
+
 def is_supported_format(filepath: str) -> bool:
     """
     Check if the file format is supported.

@@ -939,9 +939,17 @@
                             </div>
                             <div class="actions">
                                 <button id="select-photos" class="primary">Import Photos</button>
+                                <button id="import-drive" class="secondary">Import from Drive</button>
                                 <button id="delete-photos" class="secondary">Delete</button>
                                 <button id="clear-photos" class="secondary">Clear All</button>
                             </div>
+                        </div>
+                        <div id="drive-import-panel" style="display:none;padding:8px 0;">
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input id="drive-folder-url" type="text" placeholder="Paste Google Drive folder sharing URL..." style="flex:1;">
+                                <button id="drive-import-go" class="primary">Import</button>
+                            </div>
+                            <div class="hint">Folder must be shared as "Anyone with the link". Your API key must have Google Drive API enabled.</div>
                         </div>
                         <div id="file-count" class="hint">No photos selected</div>
                         <div id="file-list"></div>
@@ -2230,6 +2238,43 @@
             }
         }
 
+        async function importFromDrive() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            const urlInput = document.getElementById("drive-folder-url");
+            const folderUrl = urlInput ? urlInput.value.trim() : "";
+            if (!folderUrl) {
+                setStatus("Please enter a Google Drive folder URL.", true);
+                return;
+            }
+            setStatus("Importing from Google Drive...");
+            const goBtn = document.getElementById("drive-import-go");
+            if (goBtn) goBtn.disabled = true;
+            try {
+                const result = await window.pywebview.api.import_from_drive(folderUrl);
+                if (result && result.status === "ok") {
+                    state.photos = result.photos || [];
+                    await refreshGroups();
+                    renderFileList();
+                    if (result.warnings && result.warnings.length) {
+                        setStatus(`Imported with warnings: ${result.warnings[0]}`, true);
+                    } else {
+                        setStatus("Drive photos imported");
+                    }
+                    const panel = document.getElementById("drive-import-panel");
+                    if (panel) panel.style.display = "none";
+                } else {
+                    const message = result && result.message ? result.message : "Failed to import from Drive.";
+                    setStatus(message, true);
+                }
+            } catch (err) {
+                setStatus("Failed to import from Drive.", true);
+            } finally {
+                if (goBtn) goBtn.disabled = false;
+            }
+        }
+
         async function clearPhotos() {
             if (!window.pywebview || !window.pywebview.api) {
                 return;
@@ -2582,6 +2627,23 @@
         };
 
         document.getElementById("select-photos").addEventListener("click", selectPhotos);
+        const importDriveBtn = document.getElementById("import-drive");
+        const driveImportPanel = document.getElementById("drive-import-panel");
+        const driveImportGoBtn = document.getElementById("drive-import-go");
+        if (importDriveBtn && driveImportPanel) {
+            importDriveBtn.addEventListener("click", () => {
+                driveImportPanel.style.display = driveImportPanel.style.display === "none" ? "block" : "none";
+            });
+        }
+        if (driveImportGoBtn) {
+            driveImportGoBtn.addEventListener("click", importFromDrive);
+        }
+        const driveUrlInput = document.getElementById("drive-folder-url");
+        if (driveUrlInput) {
+            driveUrlInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") importFromDrive();
+            });
+        }
         if (selectAllPhotosBtn) {
             selectAllPhotosBtn.addEventListener("click", selectAllPhotos);
         }

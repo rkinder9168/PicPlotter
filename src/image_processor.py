@@ -200,6 +200,40 @@ class ImageProcessor:
 
         return None
 
+    def process_image_bytes(self, image_data: bytes, filename: str) -> Tuple[bytes, str]:
+        """
+        Process an image from raw bytes: apply orientation, resize, compress to JPEG.
+
+        Same as process_image() but opens from BytesIO instead of a file path.
+        Used for local/KMZ export of Drive-sourced photos.
+
+        Args:
+            image_data: Raw image bytes
+            filename: Original filename (used to derive output filename)
+
+        Returns:
+            Tuple of (processed JPEG bytes, output filename)
+        """
+        with Image.open(io.BytesIO(image_data)) as img:
+            img = self._apply_exif_orientation(img)
+
+            if img.mode in ('RGBA', 'P', 'LA'):
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+
+            img = self._resize_if_needed(img)
+
+            output = io.BytesIO()
+            img.save(output, format='JPEG', quality=self.compression_quality, optimize=True)
+
+            stem = Path(filename).stem
+            return output.getvalue(), f"{stem}.jpg"
+
     def estimate_output_size(self, input_path: str) -> int:
         """
         Estimate the output size of a processed image.

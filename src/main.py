@@ -40,11 +40,22 @@ from src.config import (
 from src.netlify_deployer import NetlifyDeployer, verify_token as verify_netlify_token
 from src.exif_extractor import (
     get_image_metadata,
+    get_image_metadata_from_bytes,
     get_supported_extensions,
     is_supported_format,
     HEIC_SUPPORTED,
     GPSCoordinates,
     ImageMetadata,
+)
+from src.google_drive import (
+    parse_drive_folder_url,
+    validate_folder_access,
+    list_folder_images,
+    get_image_url,
+    get_thumbnail_url,
+    fetch_image_bytes,
+    get_drive_image_metadata,
+    extract_metadata_from_drive,
 )
 from src.html_map_generator import (
     HTMLMapGenerator,
@@ -85,6 +96,8 @@ class AppState:
     group_aliases: Dict[str, str]
     photo_notes: Dict[str, str]
     photo_previews: Dict[str, str]
+    drive_sources: Dict[str, str]       # virtual_path -> file_id
+    drive_folder_url: Optional[str]     # currently imported folder URL
 
 
 class AppApi:
@@ -165,6 +178,125 @@ class AppApi:
             response["warnings"] = errors[:3]
         return response
 
+    def import_from_drive(self, folder_url: str) -> Dict[str, Any]:
+        """Import photos from a shared Google Drive folder."""
+        if not folder_url or not isinstance(folder_url, str):
+            return {"status": "error", "message": "Please enter a Google Drive folder URL."}
+
+        folder_id = parse_drive_folder_url(folder_url)
+        if not folder_id:
+            return {"status": "error", "message": "Could not parse a folder ID from that URL."}
+
+        api_key = get_google_maps_api_key()
+        if not api_key:
+            return {"status": "error", "message": "Please set your Google Maps API key first (it must also have Google Drive API enabled)."}
+
+        ok, msg = validate_folder_access(folder_id, api_key)
+        if not ok:
+            return {"status": "error", "message": msg}
+
+        try:
+            drive_files = list_folder_images(folder_id, api_key)
+        except Exception as exc:
+            return {"status": "error", "message": f"Failed to list folder: {exc}"}
+
+        if not drive_files:
+            return {"status": "error", "message": "No image files found in that folder."}
+
+        errors: List[str] = []
+
+        def _extract_one(file_info):
+            vpath = f"gdrive://{file_info.file_id}/{file_info.name}"
+            # Try Drive API imageMediaMetadata first
+            drive_meta = get_drive_image_metadata(file_info.file_id, api_key)
+            if drive_meta and drive_meta.latitude is not None:
+                from datetime import datetime
+                gps = GPSCoordinates(
+                    latitude=drive_meta.latitude,
+                    longitude=drive_meta.longitude,
+                    altitude=drive_meta.altitude,
+                )
+                ts = None
+                if drive_meta.timestamp:
+                    try:
+                        ts = datetime.fromisoformat(drive_meta.timestamp)
+                    except (ValueError, TypeError):
+                        pass
+                meta = ImageMetadata(
+                    filepath=Path(vpath),
+                    filename=file_info.name,
+                    gps=gps,
+                    timestamp=ts,
+                    camera_make=drive_meta.camera_make,
+                    camera_model=drive_meta.camera_model,
+                )
+                return vpath, file_info.file_id, meta, None
+
+            # Fall back to partial download + EXIF
+            exif_meta = extract_metadata_from_drive(file_info.file_id, file_info.name, api_key)
+            if exif_meta and exif_meta.latitude is not None:
+                from datetime import datetime
+                gps = GPSCoordinates(
+                    latitude=exif_meta.latitude,
+                    longitude=exif_meta.longitude,
+                    altitude=exif_meta.altitude,
+                )
+                ts = None
+                if exif_meta.timestamp:
+                    try:
+                        ts = datetime.fromisoformat(exif_meta.timestamp)
+                    except (ValueError, TypeError):
+                        pass
+                meta = ImageMetadata(
+                    filepath=Path(vpath),
+                    filename=file_info.name,
+                    gps=gps,
+                    timestamp=ts,
+                    camera_make=exif_meta.camera_make,
+                    camera_model=exif_meta.camera_model,
+                )
+                return vpath, file_info.file_id, meta, None
+            else:
+                # No GPS - still add the file, just without GPS
+                meta = ImageMetadata(
+                    filepath=Path(vpath),
+                    filename=file_info.name,
+                    gps=None,
+                    timestamp=None,
+                    camera_make=None,
+                    camera_model=None,
+                )
+                return vpath, file_info.file_id, meta, None
+
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            futures = {
+                executor.submit(_extract_one, f): f for f in drive_files
+            }
+            for future in as_completed(futures):
+                file_info = futures[future]
+                try:
+                    vpath, file_id, meta, err = future.result()
+                    if err:
+                        errors.append(err)
+                        continue
+                    if vpath not in self._state.selected_files:
+                        self._state.selected_files.append(vpath)
+                    self._state.file_metadata[vpath] = meta
+                    self._state.drive_sources[vpath] = file_id
+                except Exception as exc:
+                    errors.append(f"{file_info.name}: {exc}")
+
+        self._state.drive_folder_url = folder_url
+        self._sync_group_assignments()
+
+        if not self._state.selected_files and errors:
+            return {"status": "error", "message": f"No photos imported. {errors[0] if errors else ''}"}
+
+        response: Dict[str, Any] = {"status": "ok", "photos": self._build_photo_list()}
+        if errors:
+            response["warnings"] = errors[:3]
+        return response
+
     def select_custom_map_image(self) -> Dict[str, Any]:
         if not self._window:
             return {"status": "error", "message": "Window not ready"}
@@ -211,6 +343,8 @@ class AppApi:
         self._state.selected_files = []
         self._state.file_metadata = {}
         self._state.photo_previews = {}
+        self._state.drive_sources = {}
+        self._state.drive_folder_url = None
         _apply_overrides(
             self._state,
             {
@@ -245,6 +379,7 @@ class AppApi:
             self._state.photo_aliases.pop(path, None)
             self._state.photo_notes.pop(path, None)
             self._state.photo_previews.pop(path, None)
+            self._state.drive_sources.pop(path, None)
             self._state.group_assignments.unassign_photo(path)
 
         markers_payload = []
@@ -675,11 +810,23 @@ class AppApi:
                     return {"status": "error", "message": "Custom image not found."}
 
                 compression_quality = int(payload.get("compression_quality", 30))
-                processed_photos, marker_pixels = _process_custom_export(
-                    self._state,
-                    custom_markers,
-                    compression_quality,
+
+                # Check if all custom-placed photos are from Drive
+                custom_filepaths = [m.get("filepath") for m in custom_markers if m.get("filepath")]
+                all_drive_custom = custom_filepaths and all(
+                    fp in self._state.drive_sources for fp in custom_filepaths
                 )
+
+                if all_drive_custom:
+                    processed_photos, marker_pixels = _build_drive_custom_export(
+                        self._state, custom_markers,
+                    )
+                else:
+                    processed_photos, marker_pixels = _process_custom_export(
+                        self._state,
+                        custom_markers,
+                        compression_quality,
+                    )
                 heading = float(payload.get("heading", self._state.custom_heading))
                 export_image_path = custom_image_path
                 if heading:
@@ -787,7 +934,23 @@ class AppApi:
                 )
 
                 compression_quality = int(payload.get("compression_quality", 30))
-                processed_photos = _process_photos(self._state, payload.get("markers", []), compression_quality)
+
+                # Check if all photos to export are from Drive
+                filepaths_to_export = [
+                    item.get("filepath")
+                    for item in payload.get("markers", [])
+                    if item.get("filepath")
+                ]
+                all_drive = filepaths_to_export and all(
+                    fp in self._state.drive_sources for fp in filepaths_to_export
+                )
+
+                if all_drive:
+                    processed_photos = _build_drive_photo_dicts(
+                        self._state, payload.get("markers", []),
+                    )
+                else:
+                    processed_photos = _process_photos(self._state, payload.get("markers", []), compression_quality)
 
                 generator = HTMLMapGenerator(
                     project_name=payload.get("project_name", "Photo Map"),
@@ -868,6 +1031,8 @@ class AppApi:
         return
 
     def _run_kmz_export(self, files: List[str], output_path: str, payload: Dict[str, Any]) -> None:
+        import tempfile
+
         def progress_callback(status: str, current: int, total: int) -> None:
             if not self._window:
                 return
@@ -876,15 +1041,45 @@ class AppApi:
                 f"window.kmzProgress({json.dumps(status)}, {progress})"
             )
 
+        temp_files: List[str] = []
         try:
+            # For Drive photos, download to temp files so KMZ generator can read them
+            actual_files = []
+            drive_temp_map: Dict[str, str] = {}  # temp_path -> virtual_path
+            api_key = get_google_maps_api_key() or ""
+
+            for filepath in files:
+                file_id = self._state.drive_sources.get(filepath)
+                if file_id and api_key:
+                    metadata = self._state.file_metadata.get(filepath)
+                    filename = metadata.filename if metadata else "photo.jpg"
+                    raw_bytes = fetch_image_bytes(file_id, api_key)
+                    suffix = Path(filename).suffix or ".jpg"
+                    tmp = tempfile.NamedTemporaryFile(
+                        delete=False, suffix=suffix, prefix="pp_drive_"
+                    )
+                    tmp.write(raw_bytes)
+                    tmp.close()
+                    temp_files.append(tmp.name)
+                    actual_files.append(tmp.name)
+                    drive_temp_map[tmp.name] = filepath
+                else:
+                    actual_files.append(filepath)
+
+            # Remap gps_overrides to temp paths for Drive files
+            gps_overrides = dict(self._state.gps_overrides) if self._state.gps_overrides else {}
+            for temp_path, vpath in drive_temp_map.items():
+                if vpath in gps_overrides:
+                    gps_overrides[temp_path] = gps_overrides.pop(vpath)
+
             result_path, processed, skipped, errors = create_kmz_from_files(
-                files,
+                actual_files,
                 output_path,
                 project_name=payload.get("project_name", "PicPlotter Export"),
                 compression_quality=int(payload.get("compression_quality", 30)),
                 max_dimension=1920,
                 progress_callback=progress_callback,
-                gps_overrides=self._state.gps_overrides or None,
+                gps_overrides=gps_overrides or None,
             )
 
             if self._window:
@@ -899,6 +1094,12 @@ class AppApi:
         except Exception as exc:
             if self._window:
                 self._window.evaluate_js(f"window.kmzError({json.dumps(str(exc))})")
+        finally:
+            for tmp in temp_files:
+                try:
+                    Path(tmp).unlink()
+                except OSError:
+                    pass
 
     def _prompt_html_save_path(self, payload: Dict[str, Any]) -> Optional[str]:
         if not self._window:
@@ -976,11 +1177,15 @@ class AppApi:
         cached = self._state.photo_previews.get(filepath)
         if cached is not None:
             return cached
-        preview_uri = _image_to_preview_data_uri(
-            filepath,
-            max_dimension=PHOTO_PREVIEW_MAX_DIM,
-            quality=PHOTO_PREVIEW_QUALITY,
-        )
+        file_id = self._state.drive_sources.get(filepath)
+        if file_id:
+            preview_uri = get_thumbnail_url(file_id, PHOTO_PREVIEW_MAX_DIM)
+        else:
+            preview_uri = _image_to_preview_data_uri(
+                filepath,
+                max_dimension=PHOTO_PREVIEW_MAX_DIM,
+                quality=PHOTO_PREVIEW_QUALITY,
+            )
         self._state.photo_previews[filepath] = preview_uri
         return preview_uri
 
@@ -1663,14 +1868,22 @@ def _process_single_photo(
     gps: GPSCoordinates,
     custom_name: str,
     note: str,
+    drive_file_id: Optional[str] = None,
+    api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Process a single photo for export (resize, compress, build metadata dict).
 
     This is the core processing function used by both custom and Google tiles export.
     Designed to be called in parallel using ThreadPoolExecutor.
+
+    If drive_file_id is provided, downloads from Drive instead of local disk.
     """
-    image_data, filename = processor.process_image(filepath)
+    if drive_file_id and api_key:
+        raw_bytes = fetch_image_bytes(drive_file_id, api_key)
+        image_data, filename = processor.process_image_bytes(raw_bytes, metadata.filename)
+    else:
+        image_data, filename = processor.process_image(filepath)
     display_name = custom_name if custom_name else metadata.filename
 
     return {
@@ -1729,6 +1942,7 @@ def _process_custom_export(
 
     # Process photos in parallel
     results_map: Dict[str, Dict[str, Any]] = {}
+    api_key = get_google_maps_api_key() or ""
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -1740,6 +1954,8 @@ def _process_custom_export(
                 item["gps"],
                 item["custom_name"],
                 item["note"],
+                state.drive_sources.get(item["filepath"]),
+                api_key if item["filepath"] in state.drive_sources else None,
             ): item["filepath"]
             for item in validated_items
         }
@@ -1814,6 +2030,7 @@ def _process_photos(
 
     # Process photos in parallel
     results_map: Dict[str, Dict[str, Any]] = {}
+    api_key = get_google_maps_api_key() or ""
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -1825,6 +2042,8 @@ def _process_photos(
                 item["gps"],
                 item["custom_name"],
                 item["note"],
+                state.drive_sources.get(item["filepath"]),
+                api_key if item["filepath"] in state.drive_sources else None,
             ): item["filepath"]
             for item in items_to_process
         }
@@ -1839,6 +2058,93 @@ def _process_photos(
         processed_photos.append(results_map[item["filepath"]])
 
     return processed_photos
+
+
+def _build_drive_photo_dicts(
+    state: AppState,
+    marker_overrides: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Build photo dicts with Drive image URLs for web deploy (no downloading)."""
+    override_map = {
+        item.get("filepath"): item
+        for item in marker_overrides
+        if item.get("filepath")
+    }
+
+    processed_photos: List[Dict[str, Any]] = []
+    for filepath in state.selected_files:
+        metadata = state.file_metadata.get(filepath)
+        if not metadata:
+            continue
+        override = override_map.get(filepath)
+        gps = metadata.gps
+        if not gps and not override:
+            continue
+        if override:
+            base_gps = metadata.gps
+            gps = GPSCoordinates(
+                latitude=override.get("latitude", base_gps.latitude if base_gps else 0.0),
+                longitude=override.get("longitude", base_gps.longitude if base_gps else 0.0),
+                altitude=override.get("altitude", base_gps.altitude if base_gps else None),
+            )
+        custom_name = state.photo_aliases.get(filepath, "")
+        display_name = custom_name if custom_name else metadata.filename
+        note = state.photo_notes.get(filepath, "")
+        file_id = state.drive_sources[filepath]
+
+        processed_photos.append({
+            "filepath": filepath,
+            "filename": metadata.filename,
+            "display_name": display_name,
+            "custom_name": custom_name,
+            "note": note,
+            "image_url": get_image_url(file_id, 1920),
+            "gps": gps,
+            "timestamp": metadata.timestamp,
+        })
+
+    return processed_photos
+
+
+def _build_drive_custom_export(
+    state: AppState,
+    markers: List[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], List[PixelPoint]]:
+    """Build photo dicts with Drive image URLs for custom map web deploy."""
+    processed_photos: List[Dict[str, Any]] = []
+    marker_pixels: List[PixelPoint] = []
+
+    for item in markers:
+        filepath = item.get("filepath")
+        if not filepath:
+            continue
+        metadata = state.file_metadata.get(filepath)
+        if not metadata:
+            continue
+        x = item.get("x")
+        y = item.get("y")
+        if x is None or y is None:
+            continue
+
+        gps = metadata.gps or GPSCoordinates(latitude=0.0, longitude=0.0, altitude=None)
+        custom_name = state.photo_aliases.get(filepath, "")
+        display_name = custom_name if custom_name else metadata.filename
+        note = state.photo_notes.get(filepath, "")
+        file_id = state.drive_sources[filepath]
+
+        processed_photos.append({
+            "filepath": filepath,
+            "filename": metadata.filename,
+            "display_name": display_name,
+            "custom_name": custom_name,
+            "note": note,
+            "image_url": get_image_url(file_id, 1920),
+            "gps": gps,
+            "timestamp": metadata.timestamp,
+        })
+        marker_pixels.append(PixelPoint(float(x), float(y)))
+
+    return processed_photos, marker_pixels
 
 
 def main() -> None:
@@ -1883,6 +2189,8 @@ def main() -> None:
         group_aliases=group_aliases,
         photo_notes=photo_notes,
         photo_previews={},
+        drive_sources={},
+        drive_folder_url=None,
     )
 
     html = _build_html(state)
