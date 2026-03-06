@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PicPlotter Auto</title>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         :root {
             color-scheme: dark;
@@ -945,11 +947,15 @@
                             </div>
                         </div>
                         <div id="drive-import-panel" style="display:none;padding:8px 0;">
-                            <div style="display:flex;gap:8px;align-items:center;">
-                                <input id="drive-folder-url" type="text" placeholder="Paste Google Drive folder sharing URL..." style="flex:1;">
-                                <button id="drive-import-go" class="primary">Import</button>
+                            <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+                                <button id="drive-browse" class="primary">Browse Drive</button>
+                                <span class="hint" style="margin:0;">Sign in and pick a folder</span>
                             </div>
-                            <div class="hint">Folder must be shared as "Anyone with the link". Your API key must have Google Drive API enabled.</div>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input id="drive-folder-url" type="text" placeholder="Or paste folder sharing URL..." style="flex:1;">
+                                <button id="drive-import-go" class="secondary">Import</button>
+                            </div>
+                            <div class="hint">Browse Drive requires an OAuth Client ID in Settings. URL paste requires the folder shared as "Anyone with the link".</div>
                         </div>
                         <div id="file-count" class="hint">No photos selected</div>
                         <div id="file-list"></div>
@@ -993,6 +999,15 @@
                                             <button id="save-netlify-token" class="secondary">Save</button>
                                         </div>
                                         <div id="netlify-token-status" class="hint">Get token at app.netlify.com/user/applications/personal</div>
+                                    </div>
+
+                                    <div>
+                                        <label>Google OAuth Client ID (for Browse Drive)</label>
+                                        <div style="display:flex;gap:8px;align-items:center;">
+                                            <input id="oauth-client-id" type="password" placeholder="Enter OAuth Client ID">
+                                            <button id="save-oauth-client-id" class="secondary">Save</button>
+                                        </div>
+                                        <div class="hint">Create at console.cloud.google.com &gt; Credentials &gt; OAuth 2.0 Client ID (Web). Add http://localhost to Authorized JavaScript origins.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1179,6 +1194,7 @@
             gpsCount: 0,
             placedCount: 0,
             apiKey: INITIAL_STATE.api_key || "",
+            oauthClientId: INITIAL_STATE.oauth_client_id || "",
             markerSize: INITIAL_STATE.marker_size || 96,
             heading: INITIAL_STATE.heading || 0,
             outputFolder: null,
@@ -2238,6 +2254,97 @@
             }
         }
 
+        /* ---- Google Picker / OAuth ---- */
+        let pickerApiLoaded = false;
+
+        function ensurePickerApi() {
+            return new Promise((resolve, reject) => {
+                if (pickerApiLoaded) { resolve(); return; }
+                if (typeof gapi === "undefined") { reject("Google API not loaded"); return; }
+                gapi.load("picker", {
+                    callback: () => { pickerApiLoaded = true; resolve(); },
+                    onerror: () => reject("Failed to load Picker API"),
+                });
+            });
+        }
+
+        async function openDrivePicker() {
+            if (!state.oauthClientId) {
+                setStatus("Set your OAuth Client ID in Settings first.", true);
+                return;
+            }
+            if (typeof google === "undefined" || !google.accounts || !google.accounts.oauth2) {
+                setStatus("Google sign-in library not loaded. Check your internet connection.", true);
+                return;
+            }
+            try {
+                await ensurePickerApi();
+            } catch (err) {
+                setStatus("Google Picker API failed to load. Check your internet connection.", true);
+                return;
+            }
+
+            const browseBtn = document.getElementById("drive-browse");
+            if (browseBtn) browseBtn.disabled = true;
+
+            const tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: state.oauthClientId,
+                scope: "https://www.googleapis.com/auth/drive.readonly",
+                callback: async (response) => {
+                    if (response.error) {
+                        setStatus("Google sign-in failed: " + (response.error_description || response.error), true);
+                        if (browseBtn) browseBtn.disabled = false;
+                        return;
+                    }
+                    showDrivePicker(response.access_token, browseBtn);
+                },
+            });
+            tokenClient.requestAccessToken();
+        }
+
+        function showDrivePicker(accessToken, browseBtn) {
+            const folderView = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+                .setSelectFolderEnabled(true);
+            const picker = new google.picker.PickerBuilder()
+                .addView(folderView)
+                .setOAuthToken(accessToken)
+                .setTitle("Select a Google Drive folder")
+                .setCallback(async (data) => {
+                    if (data.action === google.picker.Action.PICKED) {
+                        const folder = data.docs[0];
+                        await importFromDrivePicker(folder.id, folder.name, accessToken);
+                    }
+                    if (browseBtn) browseBtn.disabled = false;
+                })
+                .build();
+            picker.setVisible(true);
+        }
+
+        async function importFromDrivePicker(folderId, folderName, accessToken) {
+            if (!window.pywebview || !window.pywebview.api) return;
+            setStatus(`Importing from "${folderName}"...`);
+            try {
+                const result = await window.pywebview.api.import_from_drive_picker(folderId, accessToken);
+                if (result && result.status === "ok") {
+                    state.photos = result.photos || [];
+                    await refreshGroups();
+                    renderFileList();
+                    if (result.warnings && result.warnings.length) {
+                        setStatus(`Imported with warnings: ${result.warnings[0]}`, true);
+                    } else {
+                        setStatus("Drive photos imported");
+                    }
+                    const panel = document.getElementById("drive-import-panel");
+                    if (panel) panel.style.display = "none";
+                } else {
+                    const message = result && result.message ? result.message : "Failed to import from Drive.";
+                    setStatus(message, true);
+                }
+            } catch (err) {
+                setStatus("Failed to import from Drive.", true);
+            }
+        }
+
         async function importFromDrive() {
             if (!window.pywebview || !window.pywebview.api) {
                 return;
@@ -2375,6 +2482,39 @@
             state.apiKey = value;
             setStatus(value ? "API key saved." : "API key cleared.");
             setApiKeyLocked(Boolean(value));
+        }
+
+        /* OAuth Client ID */
+        const oauthClientIdInput = document.getElementById("oauth-client-id");
+        const saveOauthClientIdBtn = document.getElementById("save-oauth-client-id");
+        let oauthClientIdLocked = false;
+
+        function setOauthClientIdLocked(locked) {
+            oauthClientIdLocked = locked;
+            oauthClientIdInput.disabled = locked;
+            if (locked) {
+                oauthClientIdInput.value = "";
+                oauthClientIdInput.placeholder = "Saved";
+                saveOauthClientIdBtn.textContent = "Edit";
+                return;
+            }
+            oauthClientIdInput.value = "";
+            oauthClientIdInput.placeholder = "Enter OAuth Client ID";
+            saveOauthClientIdBtn.textContent = "Save";
+        }
+
+        async function saveOauthClientId() {
+            if (!window.pywebview || !window.pywebview.api) return;
+            if (oauthClientIdLocked) {
+                setOauthClientIdLocked(false);
+                oauthClientIdInput.focus();
+                return;
+            }
+            const value = oauthClientIdInput.value.trim();
+            await window.pywebview.api.save_oauth_client_id(value);
+            state.oauthClientId = value;
+            setStatus(value ? "OAuth Client ID saved." : "OAuth Client ID cleared.");
+            setOauthClientIdLocked(Boolean(value));
         }
 
         let netlifyTokenLocked = false;
@@ -2638,6 +2778,10 @@
         if (driveImportGoBtn) {
             driveImportGoBtn.addEventListener("click", importFromDrive);
         }
+        const driveBrowseBtn = document.getElementById("drive-browse");
+        if (driveBrowseBtn) {
+            driveBrowseBtn.addEventListener("click", openDrivePicker);
+        }
         const driveUrlInput = document.getElementById("drive-folder-url");
         if (driveUrlInput) {
             driveUrlInput.addEventListener("keydown", (e) => {
@@ -2658,6 +2802,7 @@
             fileListEl.addEventListener("scroll", hidePhotoPreview);
         }
         document.getElementById("save-api-key").addEventListener("click", saveApiKey);
+        saveOauthClientIdBtn.addEventListener("click", saveOauthClientId);
         saveNetlifyTokenBtn.addEventListener("click", saveNetlifyToken);
 
         const settingsToggle = document.getElementById("settings-toggle");
@@ -2685,6 +2830,7 @@
         });
 
         setApiKeyLocked(Boolean(state.apiKey));
+        setOauthClientIdLocked(Boolean(state.oauthClientId));
 
         updateButtons();
         refreshGroups();

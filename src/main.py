@@ -36,6 +36,8 @@ from src.config import (
     get_netlify_token,
     set_netlify_token,
     get_netlify_site_id,
+    get_oauth_client_id,
+    set_oauth_client_id,
 )
 from src.netlify_deployer import NetlifyDeployer, verify_token as verify_netlify_token
 from src.exif_extractor import (
@@ -98,6 +100,7 @@ class AppState:
     photo_previews: Dict[str, str]
     drive_sources: Dict[str, str]       # virtual_path -> file_id
     drive_folder_url: Optional[str]     # currently imported folder URL
+    drive_access_token: Optional[str]   # OAuth access token for private folders
 
 
 class AppApi:
@@ -112,6 +115,10 @@ class AppApi:
 
     def save_api_key(self, value: str) -> bool:
         set_google_maps_api_key(value)
+        return True
+
+    def save_oauth_client_id(self, value: str) -> bool:
+        set_oauth_client_id(value)
         return True
 
     def save_netlify_token(self, value: str) -> Dict[str, Any]:
@@ -179,7 +186,7 @@ class AppApi:
         return response
 
     def import_from_drive(self, folder_url: str) -> Dict[str, Any]:
-        """Import photos from a shared Google Drive folder."""
+        """Import photos from a shared Google Drive folder (URL paste)."""
         if not folder_url or not isinstance(folder_url, str):
             return {"status": "error", "message": "Please enter a Google Drive folder URL."}
 
@@ -191,12 +198,37 @@ class AppApi:
         if not api_key:
             return {"status": "error", "message": "Please set your Google Maps API key first (it must also have Google Drive API enabled)."}
 
-        ok, msg = validate_folder_access(folder_id, api_key)
+        result = self._do_drive_import(folder_id, api_key=api_key)
+        if result["status"] == "ok":
+            self._state.drive_folder_url = folder_url
+        return result
+
+    def import_from_drive_picker(self, folder_id: str, access_token: str) -> Dict[str, Any]:
+        """Import photos from a Google Drive folder selected via Picker."""
+        if not folder_id:
+            return {"status": "error", "message": "No folder selected."}
+        if not access_token:
+            return {"status": "error", "message": "Authentication required."}
+
+        result = self._do_drive_import(folder_id, access_token=access_token)
+        if result["status"] == "ok":
+            self._state.drive_access_token = access_token
+            self._state.drive_folder_url = f"https://drive.google.com/drive/folders/{folder_id}"
+        return result
+
+    def _do_drive_import(
+        self,
+        folder_id: str,
+        api_key: Optional[str] = None,
+        access_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Shared logic for importing photos from a Drive folder."""
+        ok, msg = validate_folder_access(folder_id, api_key=api_key, access_token=access_token)
         if not ok:
             return {"status": "error", "message": msg}
 
         try:
-            drive_files = list_folder_images(folder_id, api_key)
+            drive_files = list_folder_images(folder_id, api_key=api_key, access_token=access_token)
         except Exception as exc:
             return {"status": "error", "message": f"Failed to list folder: {exc}"}
 
@@ -208,7 +240,9 @@ class AppApi:
         def _extract_one(file_info):
             vpath = f"gdrive://{file_info.file_id}/{file_info.name}"
             # Try Drive API imageMediaMetadata first
-            drive_meta = get_drive_image_metadata(file_info.file_id, api_key)
+            drive_meta = get_drive_image_metadata(
+                file_info.file_id, api_key=api_key, access_token=access_token,
+            )
             if drive_meta and drive_meta.latitude is not None:
                 from datetime import datetime
                 gps = GPSCoordinates(
@@ -233,7 +267,9 @@ class AppApi:
                 return vpath, file_info.file_id, meta, None
 
             # Fall back to partial download + EXIF
-            exif_meta = extract_metadata_from_drive(file_info.file_id, file_info.name, api_key)
+            exif_meta = extract_metadata_from_drive(
+                file_info.file_id, file_info.name, api_key=api_key, access_token=access_token,
+            )
             if exif_meta and exif_meta.latitude is not None:
                 from datetime import datetime
                 gps = GPSCoordinates(
@@ -286,7 +322,6 @@ class AppApi:
                 except Exception as exc:
                     errors.append(f"{file_info.name}: {exc}")
 
-        self._state.drive_folder_url = folder_url
         self._sync_group_assignments()
 
         if not self._state.selected_files and errors:
@@ -345,6 +380,7 @@ class AppApi:
         self._state.photo_previews = {}
         self._state.drive_sources = {}
         self._state.drive_folder_url = None
+        self._state.drive_access_token = None
         _apply_overrides(
             self._state,
             {
@@ -1546,6 +1582,7 @@ def _build_html(state: AppState) -> str:
 
     initial_state = {
         "api_key": get_google_maps_api_key() or "",
+        "oauth_client_id": get_oauth_client_id() or "",
         "marker_size": state.marker_size,
         "heading": state.heading,
         "heic_supported": HEIC_SUPPORTED,
@@ -2191,6 +2228,7 @@ def main() -> None:
         photo_previews={},
         drive_sources={},
         drive_folder_url=None,
+        drive_access_token=None,
     )
 
     html = _build_html(state)
@@ -2238,7 +2276,7 @@ def main() -> None:
     def apply_window_icon() -> None:
         set_window_icon("PicPlotter Auto", icon_path)
 
-    webview.start(apply_window_icon)
+    webview.start(apply_window_icon, http_server=True)
 
 
 if __name__ == "__main__":

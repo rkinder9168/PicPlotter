@@ -79,20 +79,39 @@ _IMAGE_MIME_QUERY = (
 )
 
 
-def _drive_request(url: str, api_key: str, headers: Optional[dict] = None) -> bytes:
-    """Make an authenticated GET request to the Drive API."""
-    sep = "&" if "?" in url else "?"
-    full_url = f"{url}{sep}key={quote(api_key)}"
+def _drive_request(
+    url: str,
+    api_key: Optional[str] = None,
+    headers: Optional[dict] = None,
+    access_token: Optional[str] = None,
+) -> bytes:
+    """Make an authenticated GET request to the Drive API.
+
+    Uses Bearer token auth if *access_token* is provided, otherwise API key.
+    """
+    if headers is None:
+        headers = {}
+    if access_token:
+        full_url = url
+        headers["Authorization"] = f"Bearer {access_token}"
+    elif api_key:
+        sep = "&" if "?" in url else "?"
+        full_url = f"{url}{sep}key={quote(api_key)}"
+    else:
+        raise ValueError("Either api_key or access_token must be provided")
     req = Request(full_url)
-    if headers:
-        for k, v in headers.items():
-            req.add_header(k, v)
+    for k, v in headers.items():
+        req.add_header(k, v)
     with urlopen(req, timeout=30) as resp:
         return resp.read()
 
 
-def validate_folder_access(folder_id: str, api_key: str) -> Tuple[bool, str]:
-    """Test whether the API key can list files in the given folder.
+def validate_folder_access(
+    folder_id: str,
+    api_key: Optional[str] = None,
+    access_token: Optional[str] = None,
+) -> Tuple[bool, str]:
+    """Test whether the API key / token can list files in the given folder.
 
     Returns (success, message).
     """
@@ -103,7 +122,7 @@ def validate_folder_access(folder_id: str, api_key: str) -> Tuple[bool, str]:
     })
     url = f"{_DRIVE_API}/files?{params}"
     try:
-        _drive_request(url, api_key)
+        _drive_request(url, api_key=api_key, access_token=access_token)
         return True, "OK"
     except HTTPError as exc:
         if exc.code == 404:
@@ -128,8 +147,9 @@ def validate_folder_access(folder_id: str, api_key: str) -> Tuple[bool, str]:
 
 def list_folder_images(
     folder_id: str,
-    api_key: str,
+    api_key: Optional[str] = None,
     page_size: int = 100,
+    access_token: Optional[str] = None,
 ) -> List[DriveFileInfo]:
     """List image files inside a Google Drive folder (handles pagination)."""
     files: List[DriveFileInfo] = []
@@ -146,7 +166,7 @@ def list_folder_images(
             params["pageToken"] = page_token
 
         url = f"{_DRIVE_API}/files?{urlencode(params)}"
-        data = json.loads(_drive_request(url, api_key))
+        data = json.loads(_drive_request(url, api_key=api_key, access_token=access_token))
 
         for entry in data.get("files", []):
             files.append(DriveFileInfo(
@@ -186,8 +206,9 @@ def get_thumbnail_url(file_id: str, size: int = 450) -> str:
 
 def fetch_image_bytes(
     file_id: str,
-    api_key: str,
+    api_key: Optional[str] = None,
     max_bytes: Optional[int] = None,
+    access_token: Optional[str] = None,
 ) -> bytes:
     """Download file content from Drive via the API (alt=media).
 
@@ -198,7 +219,7 @@ def fetch_image_bytes(
     headers: dict = {}
     if max_bytes is not None:
         headers["Range"] = f"bytes=0-{max_bytes - 1}"
-    return _drive_request(url, api_key, headers=headers)
+    return _drive_request(url, api_key=api_key, headers=headers, access_token=access_token)
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +228,8 @@ def fetch_image_bytes(
 
 def get_drive_image_metadata(
     file_id: str,
-    api_key: str,
+    api_key: Optional[str] = None,
+    access_token: Optional[str] = None,
 ) -> Optional[ImageMetadataFromDrive]:
     """Try to get GPS/camera metadata from the Drive API's imageMediaMetadata.
 
@@ -218,7 +240,7 @@ def get_drive_image_metadata(
     })
     url = f"{_DRIVE_API}/files/{quote(file_id)}?{params}"
     try:
-        data = json.loads(_drive_request(url, api_key))
+        data = json.loads(_drive_request(url, api_key=api_key, access_token=access_token))
     except (HTTPError, URLError):
         return None
 
@@ -248,7 +270,8 @@ def get_drive_image_metadata(
 def extract_metadata_from_drive(
     file_id: str,
     filename: str,
-    api_key: str,
+    api_key: Optional[str] = None,
+    access_token: Optional[str] = None,
 ) -> Optional[ImageMetadataFromDrive]:
     """Extract EXIF metadata by downloading the first ~128KB of the file.
 
@@ -258,7 +281,7 @@ def extract_metadata_from_drive(
         from PIL import Image
         from src.exif_extractor import get_image_metadata_from_bytes
 
-        partial = fetch_image_bytes(file_id, api_key, max_bytes=131072)
+        partial = fetch_image_bytes(file_id, api_key=api_key, max_bytes=131072, access_token=access_token)
         meta = get_image_metadata_from_bytes(partial, f"gdrive://{file_id}/{filename}")
 
         lat = meta.gps.latitude if meta.gps else None

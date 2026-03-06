@@ -36,6 +36,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 API_KEY_FIELD = "google_maps_api_key"
 NETLIFY_TOKEN_FIELD = "netlify_token"
 NETLIFY_SITE_ID_FIELD = "netlify_site_id"
+OAUTH_CLIENT_ID_FIELD = "google_oauth_client_id"
 
 
 # =============================================================================
@@ -143,4 +144,22 @@ def set_netlify_site_id(value: str) -> None:
         data[NETLIFY_SITE_ID_FIELD] = cleaned
     else:
         data.pop(NETLIFY_SITE_ID_FIELD, None)
+    _save_config(data)
+
+
+def get_oauth_client_id() -> Optional[str]:
+    """Return Google OAuth Client ID from config, if available."""
+    data = _load_config()
+    client_id = data.get(OAUTH_CLIENT_ID_FIELD)
+    return client_id.strip() if isinstance(client_id, str) else None
+
+
+def set_oauth_client_id(value: str) -> None:
+    """Save the Google OAuth Client ID to config."""
+    data = _load_config()
+    cleaned = value.strip()
+    if cleaned:
+        data[OAUTH_CLIENT_ID_FIELD] = cleaned
+    else:
+        data.pop(OAUTH_CLIENT_ID_FIELD, None)
     _save_config(data)
