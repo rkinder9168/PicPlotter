@@ -45,20 +45,53 @@ PicPlotter Auto can use a Google Maps API key to fetch editor tiles.
 
 ## Google Drive Import
 
-Import photos directly from a shared Google Drive folder instead of downloading them first.
+Import photos directly from a Google Drive folder instead of downloading them first. Two options:
 
-### One-Time Setup
+- **Browse Drive** — sign into Google and pick a folder (recommended)
+- **Paste URL** — paste a shared folder link (folder must be public)
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com) (same project as your Maps API key)
-2. Enable the **Google Drive API**
-3. Update your API key restrictions to allow the Drive API (if restricted)
+### One-Time Setup: Google Drive API
 
-### Usage
+1. Go to [Google Cloud Console](https://console.cloud.google.com) → select your project (same one as your Maps API key)
+2. Go to **APIs & Services → Library**
+3. Search for **Google Drive API** and click **Enable**
+4. If your API key has restrictions, go to **APIs & Services → Credentials**, click your API key, and add **Google Drive API** to the allowed APIs
+
+### One-Time Setup: Browse Drive (OAuth + Picker)
+
+This lets you sign into Google and browse your Drive folders directly from PicPlotter — no URL copying needed.
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com) → select your project
+2. Go to **APIs & Services → Library**
+3. Search for **Google Picker API** and click **Enable**
+4. Go to **APIs & Services → Credentials**
+5. Click **+ Create Credentials → OAuth client ID**
+6. If prompted to configure the OAuth consent screen:
+   - Choose **External** user type, click **Create**
+   - Fill in the required fields (App name, User support email, Developer contact email)
+   - Click **Save and Continue** through the remaining steps
+   - On the **Publishing status** page, you can leave it in "Testing" — add your Google account as a test user
+7. Back on the **Create OAuth client ID** page:
+   - Application type: **Web application**
+   - Name: anything (e.g. "PicPlotter")
+   - **Authorized JavaScript origins**: add `http://localhost:24816`
+   - **Authorized redirect URIs**: add `http://localhost:24816`
+   - Click **Create**
+8. Copy the **Client ID** (looks like `123456789-abc.apps.googleusercontent.com`)
+9. In PicPlotter, go to **Settings** and paste it in **Google OAuth Client ID**, click **Save**
+
+### Usage: Browse Drive
+
+1. Click **Import from Drive** → **Browse Drive**
+2. Sign into your Google account in the popup
+3. Navigate to and select a folder, click **Select**
+4. Photos are imported automatically
+
+### Usage: Paste URL (no OAuth required)
 
 1. Share the Drive folder as "Anyone with the link"
-2. In PicPlotter, click "Import from Drive"
-3. Paste the folder sharing URL and click Import
-4. Photos appear with thumbnails and GPS markers
+2. Click **Import from Drive**
+3. Paste the folder sharing URL and click **Import**
 
 **Web deploys** reference photos by URL - no downloading or re-uploading needed, making deployment fast and lightweight. **Local HTML and KMZ exports** automatically download the photos to produce self-contained files.
 
@@ -127,10 +160,16 @@ The HTML map features:
 - In Google Earth Pro: Tools -> Options -> General
 - Enable "Allow placemark balloons to access local data"
 
-**Drive import fails**
+**Drive import fails (URL paste)**
 - Ensure the folder is shared as "Anyone with the link"
 - Verify the Google Drive API is enabled on your Cloud project
 - Check that your API key restrictions allow the Drive API
+
+**Browse Drive shows "redirect_uri_mismatch" or sign-in error**
+- Verify your OAuth Client ID is a **Web application** type (not Desktop)
+- Check that `http://localhost:24816` is in both **Authorized JavaScript origins** and **Authorized redirect URIs**
+- If your app is in "Testing" mode, make sure your Google account is added as a test user
+- Wait a few minutes after making changes — Google can take time to propagate
 
 ## Building from Source
 
