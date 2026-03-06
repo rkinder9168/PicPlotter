@@ -1790,9 +1790,16 @@
 
             const rect = anchorEl.getBoundingClientRect();
             groupPickerEl.style.left = `${Math.round(rect.left)}px`;
-            groupPickerEl.style.top = `${Math.round(rect.bottom + 6)}px`;
+            groupPickerEl.style.top = `0px`;
             groupPickerEl.classList.add("active");
             groupPickerEl.setAttribute("aria-hidden", "false");
+            const menuHeight = groupPickerEl.offsetHeight;
+            const spaceBelow = window.innerHeight - rect.bottom - 6;
+            if (menuHeight > spaceBelow && rect.top > menuHeight) {
+                groupPickerEl.style.top = `${Math.round(rect.top - menuHeight - 6)}px`;
+            } else {
+                groupPickerEl.style.top = `${Math.round(rect.bottom + 6)}px`;
+            }
             activeGroupPickerPath = filepath;
 
             document.addEventListener("click", handleGroupPickerOutside);
@@ -1901,9 +1908,16 @@
             colorPickerEl.appendChild(grid);
             const rect = anchorEl.getBoundingClientRect();
             colorPickerEl.style.left = `${Math.round(rect.left)}px`;
-            colorPickerEl.style.top = `${Math.round(rect.bottom + 6)}px`;
+            colorPickerEl.style.top = `0px`;
             colorPickerEl.classList.add("active");
             colorPickerEl.setAttribute("aria-hidden", "false");
+            const cpHeight = colorPickerEl.offsetHeight;
+            const cpSpaceBelow = window.innerHeight - rect.bottom - 6;
+            if (cpHeight > cpSpaceBelow && rect.top > cpHeight) {
+                colorPickerEl.style.top = `${Math.round(rect.top - cpHeight - 6)}px`;
+            } else {
+                colorPickerEl.style.top = `${Math.round(rect.bottom + 6)}px`;
+            }
             activeColorGroupId = groupId;
 
             document.addEventListener("click", handleColorPickerOutside);
