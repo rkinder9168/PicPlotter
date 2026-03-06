@@ -74,8 +74,8 @@ This lets you sign into Google and browse your Drive folders directly from PicPl
 7. Back on the **Create OAuth client ID** page:
    - Application type: **Web application**
    - Name: anything (e.g. "PicPlotter")
-   - **Authorized JavaScript origins**: add `http://localhost:24816`
-   - **Authorized redirect URIs**: add `http://localhost:24816`
+   - **Authorized JavaScript origins**: add both `http://localhost:24816` and `http://127.0.0.1:24816`
+   - **Authorized redirect URIs**: add `http://127.0.0.1:24817`
    - Click **Create**
 8. Copy the **Client ID** (looks like `123456789-abc.apps.googleusercontent.com`)
 9. In PicPlotter, go to **Settings** and paste it in **Google OAuth Client ID**, click **Save**
@@ -83,7 +83,7 @@ This lets you sign into Google and browse your Drive folders directly from PicPl
 ### Usage: Browse Drive
 
 1. Click **Import from Drive** → **Browse Drive**
-2. Sign into your Google account in the popup
+2. Sign into your Google account in the browser window that opens
 3. Navigate to and select a folder, click **Select**
 4. Photos are imported automatically
 
@@ -167,7 +167,8 @@ The HTML map features:
 
 **Browse Drive shows "redirect_uri_mismatch" or sign-in error**
 - Verify your OAuth Client ID is a **Web application** type (not Desktop)
-- Check that `http://localhost:24816` is in both **Authorized JavaScript origins** and **Authorized redirect URIs**
+- Check that `http://127.0.0.1:24817` is in **Authorized redirect URIs**
+- Check that both `http://localhost:24816` and `http://127.0.0.1:24816` are in **Authorized JavaScript origins**
 - If your app is in "Testing" mode, make sure your Google account is added as a test user
 - Wait a few minutes after making changes — Google can take time to propagate
 

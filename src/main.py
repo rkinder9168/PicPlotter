@@ -7,17 +7,19 @@ Provides a main dashboard and embedded map editor in one HTML UI.
 from __future__ import annotations
 
 import base64
+import http.server
 import io
 import json
 import math
 import threading
 import uuid
 import sys
+import webbrowser
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-from urllib.parse import quote
+from urllib.parse import quote, urlencode, parse_qs
 from urllib.request import Request, urlopen
 
 import webview
@@ -120,6 +122,79 @@ class AppApi:
     def save_oauth_client_id(self, value: str) -> bool:
         set_oauth_client_id(value)
         return True
+
+    def start_oauth_flow(self) -> Dict[str, Any]:
+        """Open system browser for Google OAuth, return access token."""
+        client_id = get_oauth_client_id()
+        if not client_id:
+            return {"status": "error", "message": "Set your OAuth Client ID in Settings first."}
+
+        token_result: Dict[str, Any] = {"status": "error", "message": "Authentication timed out."}
+        server_ready = threading.Event()
+
+        class OAuthHandler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                # Serve a page that extracts the token from the URL fragment
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"""<!DOCTYPE html><html><body>
+                <p>Completing sign-in...</p>
+                <script>
+                const params = new URLSearchParams(window.location.hash.substring(1));
+                const token = params.get('access_token');
+                if (token) {
+                    fetch('/token', {method:'POST', body: token}).then(() => {
+                        document.body.innerHTML = '<h2>Sign-in complete. You can close this tab.</h2>';
+                    });
+                } else {
+                    document.body.innerHTML = '<h2>Sign-in failed. Please close this tab and try again.</h2>';
+                }
+                </script></body></html>""")
+
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                if body:
+                    token_result["status"] = "ok"
+                    token_result["access_token"] = body
+                    token_result["message"] = ""
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"ok")
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+
+            def log_message(self, format, *args):
+                pass  # Suppress server logs
+
+        try:
+            server = http.server.HTTPServer(("127.0.0.1", 24817), OAuthHandler)
+        except OSError:
+            return {"status": "error", "message": "OAuth callback port 24817 is in use. Close any previous sign-in tabs and try again."}
+        redirect_uri = "http://127.0.0.1:24817"
+
+        def run_server():
+            server_ready.set()
+            server.serve_forever()
+
+        server_thread = threading.Thread(target=run_server, daemon=True)
+        server_thread.start()
+        server_ready.wait()
+
+        auth_params = urlencode({
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "token",
+            "scope": "https://www.googleapis.com/auth/drive.readonly",
+            "include_granted_scopes": "true",
+        })
+        auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{auth_params}"
+        webbrowser.open(auth_url)
+
+        server_thread.join(timeout=120)
+        server.server_close()
+        return token_result
 
     def save_netlify_token(self, value: str) -> Dict[str, Any]:
         """Save Netlify token and verify it."""

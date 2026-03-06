@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PicPlotter Auto</title>
     <script src="https://apis.google.com/js/api.js" async defer></script>
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         :root {
             color-scheme: dark;
@@ -1007,7 +1006,7 @@
                                             <input id="oauth-client-id" type="password" placeholder="Enter OAuth Client ID">
                                             <button id="save-oauth-client-id" class="secondary">Save</button>
                                         </div>
-                                        <div class="hint">Create at console.cloud.google.com &gt; Credentials &gt; OAuth 2.0 Client ID (Web app). Add <strong>http://localhost:24816</strong> to both Authorized JavaScript origins and Authorized redirect URIs.</div>
+                                        <div class="hint">Create at console.cloud.google.com &gt; Credentials &gt; OAuth 2.0 Client ID (Web app). Add <strong>http://127.0.0.1:24817</strong> to Authorized redirect URIs. Add both <strong>http://localhost:24816</strong> and <strong>http://127.0.0.1:24816</strong> to Authorized JavaScript origins.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1041,7 +1040,7 @@
 
                             <div>
                                 <label>Image Quality</label>
-                                <input id="quality" type="range" min="25" max="100" value="30">
+                                <input id="quality" type="range" min="5" max="100" value="30">
                                 <div id="quality-value" class="value">30%</div>
                             </div>
 
@@ -2287,10 +2286,6 @@
                 setStatus("Set your OAuth Client ID in Settings first.", true);
                 return;
             }
-            if (typeof google === "undefined" || !google.accounts || !google.accounts.oauth2) {
-                setStatus("Google sign-in library not loaded. Check your internet connection.", true);
-                return;
-            }
             try {
                 await ensurePickerApi();
             } catch (err) {
@@ -2300,20 +2295,20 @@
 
             const browseBtn = document.getElementById("drive-browse");
             if (browseBtn) browseBtn.disabled = true;
+            setStatus("Signing in via browser... Complete the sign-in in the window that opened.");
 
-            const tokenClient = google.accounts.oauth2.initTokenClient({
-                client_id: state.oauthClientId,
-                scope: "https://www.googleapis.com/auth/drive.readonly",
-                callback: async (response) => {
-                    if (response.error) {
-                        setStatus("Google sign-in failed: " + (response.error_description || response.error), true);
-                        if (browseBtn) browseBtn.disabled = false;
-                        return;
-                    }
-                    showDrivePicker(response.access_token, browseBtn);
-                },
-            });
-            tokenClient.requestAccessToken();
+            try {
+                const result = await window.pywebview.api.start_oauth_flow();
+                if (result.status !== "ok" || !result.access_token) {
+                    setStatus(result.message || "Google sign-in failed.", true);
+                    if (browseBtn) browseBtn.disabled = false;
+                    return;
+                }
+                showDrivePicker(result.access_token, browseBtn);
+            } catch (err) {
+                setStatus("Google sign-in failed: " + err, true);
+                if (browseBtn) browseBtn.disabled = false;
+            }
         }
 
         function showDrivePicker(accessToken, browseBtn) {
