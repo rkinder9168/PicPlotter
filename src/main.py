@@ -2276,7 +2276,7 @@ def main() -> None:
     def apply_window_icon() -> None:
         set_window_icon("PicPlotter Auto", icon_path)
 
-    webview.start(apply_window_icon, http_server=True)
+    webview.start(apply_window_icon, http_server=True, http_port=24816)
 
 
 if __name__ == "__main__":
