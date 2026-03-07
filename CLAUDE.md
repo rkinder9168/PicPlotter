@@ -5,7 +5,7 @@
 **Project**: PicPlotter Auto (Web/Drive edition)
 **Repo**: `PicPlotter_web_claude`
 **Purpose**: Auto-plot geotagged photos on Google satellite imagery and export KMZ/HTML. Supports Google Drive folder import with URL-referenced web deployments.
-**Status**: Feature complete, v3.0.0
+**Status**: Feature complete, v3.1.0
 **Related Docs**: [PLANNING.md](./PLANNING.md) | [TASKS.md](./TASKS.md)
 
 ---
@@ -48,6 +48,7 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 - **Google Drive import** - load photos from shared folders; web deploys use URL references (no download/re-upload)
 - **KMZ and HTML exports** - deliver to Google Earth Pro or clients
 - **Deploy to Web** - Netlify deployment with shareable link
+- **Project memory** - save/load project settings (name, client, address, etc.) for reuse
 - **Single executable** - one .exe to distribute
 
 ---
@@ -59,7 +60,7 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 ├── src/
 │   ├── __init__.py             # Package marker + version
 │   ├── main.py                 # Entry point + single-window pywebview UI
-│   ├── config.py               # API key config, constants, get_asset_path()
+│   ├── config.py               # API key config, constants, project management
 │   ├── exif_extractor.py       # GPS coordinate extraction from EXIF
 │   ├── image_processor.py      # HEIC conversion, compression, EXIF orientation
 │   ├── kmz_generator.py        # KML/KMZ generation with embedded images
@@ -109,6 +110,7 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 
 ### `src/config.py`
 - Saves/loads Google API keys and Netlify tokens from `~/.picplotter_auto/config.json`
+- Project management: `list_projects()`, `save_project()`, `load_project()`, `delete_project()` — stores projects as JSON in `~/.picplotter_auto/projects/`
 - Environment variable fallback (`GOOGLE_MAPS_API_KEY`)
 - Centralized constants (TILE_SIZE, EXPORT_MAX_DIM, etc.)
 - Shared `get_asset_path()` for PyInstaller compatibility

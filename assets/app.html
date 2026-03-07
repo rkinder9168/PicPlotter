@@ -206,6 +206,28 @@
             min-height: 56px;
         }
 
+        .panel select {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--panel-border);
+            background: #0c1412;
+            color: var(--text);
+            cursor: pointer;
+        }
+
+        .project-controls {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .project-controls button {
+            flex: 1;
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+
         .panel input[disabled] {
             color: var(--muted);
         }
@@ -1019,6 +1041,18 @@
                             </div>
 
                             <div>
+                                <label>Saved Projects</label>
+                                <select id="project-select">
+                                    <option value="">(New Project)</option>
+                                </select>
+                                <div class="project-controls">
+                                    <button id="project-save" class="primary">Save</button>
+                                    <button id="project-load" class="secondary">Load</button>
+                                    <button id="project-delete" class="danger">Delete</button>
+                                </div>
+                            </div>
+
+                            <div>
                                 <label>Project Name</label>
                                 <input id="project-name" type="text" value="Interactive Image">
                             </div>
@@ -1242,6 +1276,10 @@
         const clientNameInput = document.getElementById("client-name");
         const clientCompanyInput = document.getElementById("client-company");
         const clientAddressInput = document.getElementById("client-address");
+        const projectSelect = document.getElementById("project-select");
+        const projectSaveBtn = document.getElementById("project-save");
+        const projectLoadBtn = document.getElementById("project-load");
+        const projectDeleteBtn = document.getElementById("project-delete");
         const qualityInput = document.getElementById("quality");
         const qualityValue = document.getElementById("quality-value");
         const outputFolderInput = document.getElementById("output-folder");
@@ -2895,6 +2933,95 @@
         if (deleteGroupBtn) {
             deleteGroupBtn.addEventListener("click", deleteGroup);
         }
+
+        /* ── Project save/load ─────────────────────────────────── */
+        function populateProjectSelect(projects, selectName) {
+            projectSelect.innerHTML = '<option value="">(New Project)</option>';
+            (projects || []).forEach(name => {
+                const opt = document.createElement("option");
+                opt.value = name;
+                opt.textContent = name;
+                projectSelect.appendChild(opt);
+            });
+            if (selectName) {
+                projectSelect.value = selectName;
+            }
+        }
+
+        async function saveCurrentProject() {
+            if (!window.pywebview || !window.pywebview.api) return;
+            const name = projectNameInput.value.trim();
+            if (!name) {
+                setStatus("Enter a Project Name before saving.", true);
+                return;
+            }
+            const payload = {
+                name: name,
+                project_name: name,
+                proposal_link: proposalLinkInput.value.trim(),
+                client_name: clientNameInput.value.trim(),
+                client_company: clientCompanyInput.value.trim(),
+                client_address: clientAddressInput.value.trim(),
+                quality: Number(qualityInput.value),
+            };
+            const result = await window.pywebview.api.save_project(payload);
+            if (result.status === "ok") {
+                populateProjectSelect(result.projects, name);
+                setStatus(`Project "${name}" saved.`);
+            } else {
+                setStatus(result.message || "Save failed.", true);
+            }
+        }
+
+        async function loadSelectedProject() {
+            if (!window.pywebview || !window.pywebview.api) return;
+            const name = projectSelect.value;
+            if (!name) {
+                setStatus("Select a project to load.", true);
+                return;
+            }
+            const result = await window.pywebview.api.load_project(name);
+            if (result.status === "ok") {
+                const d = result.data;
+                projectNameInput.value = d.project_name || "";
+                proposalLinkInput.value = d.proposal_link || "";
+                clientNameInput.value = d.client_name || "";
+                clientCompanyInput.value = d.client_company || "";
+                clientAddressInput.value = d.client_address || "";
+                if (d.quality != null) {
+                    qualityInput.value = d.quality;
+                    qualityValue.textContent = `${d.quality}%`;
+                }
+                if (d.output_folder) {
+                    outputFolderInput.value = d.output_folder;
+                    state.outputFolder = d.output_folder;
+                }
+                setStatus(`Project "${name}" loaded.`);
+            } else {
+                setStatus(result.message || "Load failed.", true);
+            }
+        }
+
+        async function deleteSelectedProject() {
+            if (!window.pywebview || !window.pywebview.api) return;
+            const name = projectSelect.value;
+            if (!name) {
+                setStatus("Select a project to delete.", true);
+                return;
+            }
+            const result = await window.pywebview.api.delete_project(name);
+            if (result.status === "ok") {
+                populateProjectSelect(result.projects, "");
+                setStatus(`Project "${name}" deleted.`);
+            } else {
+                setStatus(result.message || "Delete failed.", true);
+            }
+        }
+
+        populateProjectSelect(INITIAL_STATE.projects || []);
+        projectSaveBtn.addEventListener("click", saveCurrentProject);
+        projectLoadBtn.addEventListener("click", loadSelectedProject);
+        projectDeleteBtn.addEventListener("click", deleteSelectedProject);
 
         qualityInput.addEventListener("input", () => {
             qualityValue.textContent = `${qualityInput.value}%`;

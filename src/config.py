@@ -201,3 +201,52 @@ def set_oauth_refresh_token(value: str) -> None:
     else:
         data.pop(OAUTH_REFRESH_TOKEN_FIELD, None)
     _save_config(data)
+
+
+# =============================================================================
+# Project Management
+# =============================================================================
+
+PROJECTS_DIR = CONFIG_DIR / "projects"
+
+
+def list_projects() -> list[str]:
+    """Return sorted list of saved project names."""
+    if not PROJECTS_DIR.exists():
+        return []
+    names = []
+    for f in PROJECTS_DIR.iterdir():
+        if f.suffix == ".json" and f.is_file():
+            names.append(f.stem)
+    names.sort(key=str.lower)
+    return names
+
+
+def save_project(name: str, data: Dict[str, Any]) -> None:
+    """Save project data to a JSON file."""
+    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+    path = PROJECTS_DIR / f"{name}.json"
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+
+
+def load_project(name: str) -> Optional[Dict[str, Any]]:
+    """Load project data by name. Returns None if not found."""
+    path = PROJECTS_DIR / f"{name}.json"
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def delete_project(name: str) -> bool:
+    """Delete a saved project. Returns True if deleted."""
+    path = PROJECTS_DIR / f"{name}.json"
+    if path.exists():
+        path.unlink()
+        return True
+    return False

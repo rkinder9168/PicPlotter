@@ -165,11 +165,20 @@ All `src.*` modules must be listed as hidden imports, including `src.google_driv
 
 ---
 
+## Project Memory
+
+Projects are saved as individual JSON files in `~/.picplotter_auto/projects/{name}.json`. Each project stores:
+- Project name, proposal link, client name, company, address
+- Image quality setting, output folder, Drive folder URL
+
+The UI provides a dropdown selector with Save/Load/Delete controls above the project fields. The project list is populated from the initial state on launch and updated dynamically after save/delete operations.
+
+---
+
 ## Future Considerations
 
 ### Potential Enhancements (Not Currently Planned)
 - Drag-and-drop file support
-- Google Drive OAuth for private folders (currently requires "Anyone with link")
 - Batch folder processing
 - Export to other formats (GeoJSON, GPX)
 - Photo grouping/clustering for dense areas

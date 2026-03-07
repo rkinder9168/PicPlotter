@@ -4,7 +4,7 @@
 
 ---
 
-## Project Status: v3.0.0 - Feature Complete
+## Project Status: v3.1.0 - Feature Complete
 
 All planned features implemented. Windows and macOS builds available via GitHub Actions.
 
@@ -55,6 +55,14 @@ All planned features implemented. Windows and macOS builds available via GitHub 
 - [x] `src/html_map_generator.py` - `image_url` support in photo dicts
 - [x] `assets/app.html` - "Import from Drive" button + URL input panel + JS handler
 
+### Phase 13: Project Memory
+- [x] `src/config.py` — `list_projects()`, `save_project()`, `load_project()`, `delete_project()` storing JSON in `~/.picplotter_auto/projects/`
+- [x] `src/main.py` — `AppApi` methods: `get_projects`, `save_project`, `load_project`, `delete_project`
+- [x] `src/main.py` — Initial state includes project list for dropdown population
+- [x] `assets/app.html` — "Saved Projects" dropdown with Save/Load/Delete buttons
+- [x] `assets/app.html` — JS functions to populate dropdown, save/load/delete projects
+- [x] Saves: project name, proposal link, client name, company, address, quality, output folder, Drive folder URL
+
 ### Phase 12: Build & CI Setup
 - [x] `build/build.py` with `src.google_drive` hidden import
 - [x] `PicPlotter.spec` updated for new repo path + google_drive module
@@ -100,7 +108,11 @@ Before distribution, verify:
 
 ## Version History
 
-### v3.0.0 (Current)
+### v3.1.0 (Current)
+- Project memory: save/load project settings (name, client, address, etc.)
+- Projects stored as JSON in `~/.picplotter_auto/projects/`
+
+### v3.0.0
 - Google Drive folder import with URL-referenced web deployments
 - No new dependencies (stdlib urllib)
 - Separate repo: `PicPlotter_web_claude`

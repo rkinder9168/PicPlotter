@@ -46,6 +46,10 @@ from src.config import (
     set_oauth_client_secret,
     get_oauth_refresh_token,
     set_oauth_refresh_token,
+    list_projects as _list_projects,
+    save_project as _save_project,
+    load_project as _load_project,
+    delete_project as _delete_project,
 )
 from src.netlify_deployer import NetlifyDeployer, verify_token as verify_netlify_token
 from src.exif_extractor import (
@@ -124,6 +128,49 @@ class AppApi:
     def save_api_key(self, value: str) -> bool:
         set_google_maps_api_key(value)
         return True
+
+    # ── Project management ──────────────────────────────────────────
+
+    def get_projects(self) -> Dict[str, Any]:
+        return {"status": "ok", "projects": _list_projects()}
+
+    def save_project(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        name = (payload.get("name") or "").strip()
+        if not name:
+            return {"status": "error", "message": "Project name is required."}
+        data = {
+            "project_name": payload.get("project_name", ""),
+            "proposal_link": payload.get("proposal_link", ""),
+            "client_name": payload.get("client_name", ""),
+            "client_company": payload.get("client_company", ""),
+            "client_address": payload.get("client_address", ""),
+            "quality": payload.get("quality", 30),
+            "output_folder": self._state.output_folder,
+            "drive_folder_url": self._state.drive_folder_url,
+        }
+        _save_project(name, data)
+        return {"status": "ok", "projects": _list_projects()}
+
+    def load_project(self, name: str) -> Dict[str, Any]:
+        if not name:
+            return {"status": "error", "message": "No project selected."}
+        data = _load_project(name)
+        if data is None:
+            return {"status": "error", "message": f"Project '{name}' not found."}
+        output_folder = data.get("output_folder")
+        if output_folder:
+            self._state.output_folder = output_folder
+        return {"status": "ok", "data": data}
+
+    def delete_project(self, name: str) -> Dict[str, Any]:
+        if not name:
+            return {"status": "error", "message": "No project selected."}
+        deleted = _delete_project(name)
+        if not deleted:
+            return {"status": "error", "message": f"Project '{name}' not found."}
+        return {"status": "ok", "projects": _list_projects()}
+
+    # ────────────────────────────────────────────────────────────────
 
     def save_oauth_client_id(self, value: str) -> bool:
         set_oauth_client_id(value)
@@ -1735,6 +1782,7 @@ def _build_html(state: AppState) -> str:
         "marker_size": state.marker_size,
         "heading": state.heading,
         "heic_supported": HEIC_SUPPORTED,
+        "projects": _list_projects(),
     }
 
     html = html.replace("__INITIAL_STATE__", json.dumps(initial_state))

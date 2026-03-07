@@ -22,6 +22,7 @@ Auto-plot Google satellite imagery from your geotagged photos, then export KMZ o
 - **Google Drive import** - load photos from a shared Drive folder; web deploys reference images by URL (no download/re-upload)
 - **KMZ and HTML outputs** - Google Earth Pro and client-ready HTML
 - **Deploy to Web** - instantly deploy interactive maps to Netlify and share a link with clients
+- **Project memory** - save and reload project settings (name, client, address, etc.) so you don't have to retype
 - **Modern dark UI** - single-window experience
 - **Supports HEIC and JPG** - works with iPhone and Android photos
 
@@ -94,6 +95,17 @@ This lets you sign into Google and browse your Drive folders directly from PicPl
 3. Paste the folder sharing URL and click **Import**
 
 **Web deploys** reference photos by URL - no downloading or re-uploading needed, making deployment fast and lightweight. **Local HTML and KMZ exports** automatically download the photos to produce self-contained files.
+
+## Saved Projects
+
+Save your project settings so you can come back and edit later without retyping.
+
+1. Fill in **Project Name**, **Proposal Link**, **Client**, **Company**, **Address**, etc.
+2. Click **Save** — the project appears in the **Saved Projects** dropdown
+3. To reload later, select the project from the dropdown and click **Load**
+4. To remove a saved project, select it and click **Delete**
+
+Projects are stored locally at `~/.picplotter_auto/projects/`.
 
 ## Deploy to Web (Netlify)
 
