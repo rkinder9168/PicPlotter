@@ -138,6 +138,8 @@ class AppApi:
         name = (payload.get("name") or "").strip()
         if not name:
             return {"status": "error", "message": "Project name is required."}
+        # Separate local files from Drive files
+        local_files = [f for f in self._state.selected_files if f not in self._state.drive_sources]
         data = {
             "project_name": payload.get("project_name", ""),
             "proposal_link": payload.get("proposal_link", ""),
@@ -147,6 +149,8 @@ class AppApi:
             "quality": payload.get("quality", 30),
             "output_folder": self._state.output_folder,
             "drive_folder_url": self._state.drive_folder_url,
+            "local_files": local_files,
+            "drive_sources": dict(self._state.drive_sources),
         }
         _save_project(name, data)
         return {"status": "ok", "projects": _list_projects()}
@@ -160,7 +164,91 @@ class AppApi:
         output_folder = data.get("output_folder")
         if output_folder:
             self._state.output_folder = output_folder
-        return {"status": "ok", "data": data}
+
+        # Re-import saved photos
+        errors: List[str] = []
+        loaded_local = 0
+        loaded_drive = 0
+
+        # Clear current photos first
+        self._state.selected_files = []
+        self._state.file_metadata = {}
+        self._state.photo_previews = {}
+        self._state.drive_sources = {}
+        self._state.drive_folder_url = data.get("drive_folder_url")
+        self._state.drive_access_token = None
+
+        # Re-import local files
+        for filepath in data.get("local_files", []):
+            if not Path(filepath).exists():
+                errors.append(f"{Path(filepath).name}: file not found")
+                continue
+            if not is_supported_format(filepath):
+                continue
+            try:
+                metadata = get_image_metadata(filepath)
+            except Exception as exc:
+                errors.append(f"{Path(filepath).name}: {exc}")
+                continue
+            self._state.file_metadata[filepath] = metadata
+            self._state.selected_files.append(filepath)
+            loaded_local += 1
+
+        # Re-import Drive files
+        drive_sources = data.get("drive_sources", {})
+        if drive_sources:
+            api_key = get_google_maps_api_key()
+            for vpath, file_id in drive_sources.items():
+                filename = vpath.split("/", 1)[-1] if "/" in vpath else file_id
+                try:
+                    drive_meta = get_drive_image_metadata(file_id, api_key=api_key)
+                    if drive_meta and drive_meta.latitude is not None:
+                        from datetime import datetime
+                        gps = GPSCoordinates(
+                            latitude=drive_meta.latitude,
+                            longitude=drive_meta.longitude,
+                            altitude=drive_meta.altitude,
+                        )
+                        ts = None
+                        if drive_meta.timestamp:
+                            try:
+                                ts = datetime.fromisoformat(drive_meta.timestamp)
+                            except (ValueError, TypeError):
+                                pass
+                        meta = ImageMetadata(
+                            filepath=Path(vpath),
+                            filename=filename,
+                            gps=gps,
+                            timestamp=ts,
+                            camera_make=drive_meta.camera_make,
+                            camera_model=drive_meta.camera_model,
+                        )
+                    else:
+                        meta = ImageMetadata(
+                            filepath=Path(vpath),
+                            filename=filename,
+                            gps=None, timestamp=None,
+                            camera_make=None, camera_model=None,
+                        )
+                    self._state.selected_files.append(vpath)
+                    self._state.file_metadata[vpath] = meta
+                    self._state.drive_sources[vpath] = file_id
+                    loaded_drive += 1
+                except Exception as exc:
+                    errors.append(f"{filename}: {exc}")
+
+        self._sync_group_assignments()
+
+        response: Dict[str, Any] = {
+            "status": "ok",
+            "data": data,
+            "photos": self._build_photo_list(),
+            "loaded_local": loaded_local,
+            "loaded_drive": loaded_drive,
+        }
+        if errors:
+            response["warnings"] = errors[:5]
+        return response
 
     def delete_project(self, name: str) -> Dict[str, Any]:
         if not name:

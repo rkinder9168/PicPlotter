@@ -2980,6 +2980,7 @@
                 setStatus("Select a project to load.", true);
                 return;
             }
+            setStatus(`Loading project "${name}"...`);
             const result = await window.pywebview.api.load_project(name);
             if (result.status === "ok") {
                 const d = result.data;
@@ -2996,7 +2997,20 @@
                     outputFolderInput.value = d.output_folder;
                     state.outputFolder = d.output_folder;
                 }
-                setStatus(`Project "${name}" loaded.`);
+                // Restore photos
+                if (result.photos) {
+                    state.photos = result.photos;
+                    await refreshGroups();
+                    renderFileList();
+                }
+                const parts = [];
+                const total = (result.loaded_local || 0) + (result.loaded_drive || 0);
+                if (total > 0) parts.push(`${total} photo${total !== 1 ? "s" : ""}`);
+                if (result.warnings && result.warnings.length) {
+                    parts.push(`${result.warnings.length} skipped`);
+                }
+                const detail = parts.length ? ` (${parts.join(", ")})` : "";
+                setStatus(`Project "${name}" loaded${detail}.`);
             } else {
                 setStatus(result.message || "Load failed.", true);
             }
