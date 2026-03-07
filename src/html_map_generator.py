@@ -2127,6 +2127,7 @@ class HTMLMapGenerator:
             setNotesOpen(false);
             lightbox.classList.remove('active');
             lightbox.setAttribute('aria-hidden', 'true');
+            lightboxImg.src = '';
             currentPhotoIndex = -1;
             if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {{
                 lastFocusedElement.focus();

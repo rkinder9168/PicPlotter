@@ -1006,7 +1006,14 @@
                                             <input id="oauth-client-id" type="password" placeholder="Enter OAuth Client ID">
                                             <button id="save-oauth-client-id" class="secondary">Save</button>
                                         </div>
-                                        <div class="hint">Create at console.cloud.google.com &gt; Credentials &gt; OAuth 2.0 Client ID (Web app). Add <strong>http://127.0.0.1:24817</strong> to Authorized redirect URIs. Add both <strong>http://localhost:24816</strong> and <strong>http://127.0.0.1:24816</strong> to Authorized JavaScript origins.</div>
+                                    </div>
+                                    <div>
+                                        <label>Google OAuth Client Secret</label>
+                                        <div style="display:flex;gap:8px;align-items:center;">
+                                            <input id="oauth-client-secret" type="password" placeholder="Enter OAuth Client Secret">
+                                            <button id="save-oauth-client-secret" class="secondary">Save</button>
+                                        </div>
+                                        <div class="hint">Create at console.cloud.google.com &gt; Credentials &gt; OAuth 2.0 Client ID (Desktop app or Web app). For Web app, add <strong>http://127.0.0.1:24817</strong> to Authorized redirect URIs.</div>
                                     </div>
                                 </div>
                             </div>
@@ -1194,6 +1201,8 @@
             placedCount: 0,
             apiKey: INITIAL_STATE.api_key || "",
             oauthClientId: INITIAL_STATE.oauth_client_id || "",
+            oauthClientSecret: INITIAL_STATE.oauth_client_secret || "",
+            hasRefreshToken: INITIAL_STATE.has_refresh_token || false,
             markerSize: INITIAL_STATE.marker_size || 96,
             heading: INITIAL_STATE.heading || 0,
             outputFolder: null,
@@ -2286,6 +2295,10 @@
                 setStatus("Set your OAuth Client ID in Settings first.", true);
                 return;
             }
+            if (!state.oauthClientSecret) {
+                setStatus("Set your OAuth Client Secret in Settings first.", true);
+                return;
+            }
             try {
                 await ensurePickerApi();
             } catch (err) {
@@ -2295,6 +2308,21 @@
 
             const browseBtn = document.getElementById("drive-browse");
             if (browseBtn) browseBtn.disabled = true;
+
+            // Try silent token refresh first
+            if (state.hasRefreshToken) {
+                setStatus("Connecting to Google Drive...");
+                try {
+                    const refreshResult = await window.pywebview.api.try_refresh_token();
+                    if (refreshResult.status === "ok" && refreshResult.access_token) {
+                        showDrivePicker(refreshResult.access_token, browseBtn);
+                        return;
+                    }
+                } catch (err) {
+                    // Fall through to full auth flow
+                }
+            }
+
             setStatus("Signing in via browser... Complete the sign-in in the window that opened.");
 
             try {
@@ -2304,6 +2332,7 @@
                     if (browseBtn) browseBtn.disabled = false;
                     return;
                 }
+                state.hasRefreshToken = true;
                 showDrivePicker(result.access_token, browseBtn);
             } catch (err) {
                 setStatus("Google sign-in failed: " + err, true);
@@ -2524,6 +2553,39 @@
             state.oauthClientId = value;
             setStatus(value ? "OAuth Client ID saved." : "OAuth Client ID cleared.");
             setOauthClientIdLocked(Boolean(value));
+        }
+
+        /* OAuth Client Secret */
+        const oauthClientSecretInput = document.getElementById("oauth-client-secret");
+        const saveOauthClientSecretBtn = document.getElementById("save-oauth-client-secret");
+        let oauthClientSecretLocked = false;
+
+        function setOauthClientSecretLocked(locked) {
+            oauthClientSecretLocked = locked;
+            oauthClientSecretInput.disabled = locked;
+            if (locked) {
+                oauthClientSecretInput.value = "";
+                oauthClientSecretInput.placeholder = "Saved";
+                saveOauthClientSecretBtn.textContent = "Edit";
+                return;
+            }
+            oauthClientSecretInput.value = "";
+            oauthClientSecretInput.placeholder = "Enter OAuth Client Secret";
+            saveOauthClientSecretBtn.textContent = "Save";
+        }
+
+        async function saveOauthClientSecret() {
+            if (!window.pywebview || !window.pywebview.api) return;
+            if (oauthClientSecretLocked) {
+                setOauthClientSecretLocked(false);
+                oauthClientSecretInput.focus();
+                return;
+            }
+            const value = oauthClientSecretInput.value.trim();
+            await window.pywebview.api.save_oauth_client_secret(value);
+            state.oauthClientSecret = value;
+            setStatus(value ? "OAuth Client Secret saved." : "OAuth Client Secret cleared.");
+            setOauthClientSecretLocked(Boolean(value));
         }
 
         let netlifyTokenLocked = false;
@@ -2812,6 +2874,7 @@
         }
         document.getElementById("save-api-key").addEventListener("click", saveApiKey);
         saveOauthClientIdBtn.addEventListener("click", saveOauthClientId);
+        saveOauthClientSecretBtn.addEventListener("click", saveOauthClientSecret);
         saveNetlifyTokenBtn.addEventListener("click", saveNetlifyToken);
 
         const settingsToggle = document.getElementById("settings-toggle");
@@ -2840,6 +2903,7 @@
 
         setApiKeyLocked(Boolean(state.apiKey));
         setOauthClientIdLocked(Boolean(state.oauthClientId));
+        setOauthClientSecretLocked(Boolean(state.oauthClientSecret));
 
         updateButtons();
         refreshGroups();

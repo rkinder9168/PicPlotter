@@ -7,10 +7,12 @@ Provides a main dashboard and embedded map editor in one HTML UI.
 from __future__ import annotations
 
 import base64
+import hashlib
 import http.server
 import io
 import json
 import math
+import secrets
 import threading
 import uuid
 import sys
@@ -19,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-from urllib.parse import quote, urlencode, parse_qs
+from urllib.parse import quote, urlencode, parse_qs, urlparse
 from urllib.request import Request, urlopen
 
 import webview
@@ -40,6 +42,10 @@ from src.config import (
     get_netlify_site_id,
     get_oauth_client_id,
     set_oauth_client_id,
+    get_oauth_client_secret,
+    set_oauth_client_secret,
+    get_oauth_refresh_token,
+    set_oauth_refresh_token,
 )
 from src.netlify_deployer import NetlifyDeployer, verify_token as verify_netlify_token
 from src.exif_extractor import (
@@ -123,50 +129,84 @@ class AppApi:
         set_oauth_client_id(value)
         return True
 
+    def save_oauth_client_secret(self, value: str) -> bool:
+        set_oauth_client_secret(value)
+        return True
+
+    def try_refresh_token(self) -> Dict[str, Any]:
+        """Try to get a new access token using a stored refresh token."""
+        client_id = get_oauth_client_id()
+        client_secret = get_oauth_client_secret()
+        refresh_token = get_oauth_refresh_token()
+        if not all([client_id, client_secret, refresh_token]):
+            return {"status": "error", "message": "No saved session."}
+
+        try:
+            data = urlencode({
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            }).encode()
+            req = Request("https://oauth2.googleapis.com/token", data=data, method="POST")
+            req.add_header("Content-Type", "application/x-www-form-urlencoded")
+            with urlopen(req, timeout=10) as resp:
+                result = json.loads(resp.read().decode())
+            access_token = result.get("access_token")
+            if access_token:
+                return {"status": "ok", "access_token": access_token}
+            return {"status": "error", "message": "No access token in refresh response."}
+        except Exception as exc:
+            # Clear refresh token if Google rejected it (revoked/expired)
+            from urllib.error import HTTPError
+            if isinstance(exc, HTTPError) and exc.code in (400, 401):
+                set_oauth_refresh_token("")
+            return {"status": "error", "message": "Session expired. Please sign in again."}
+
     def start_oauth_flow(self) -> Dict[str, Any]:
-        """Open system browser for Google OAuth, return access token."""
+        """Open system browser for Google OAuth authorization code flow with PKCE."""
         client_id = get_oauth_client_id()
         if not client_id:
             return {"status": "error", "message": "Set your OAuth Client ID in Settings first."}
+        client_secret = get_oauth_client_secret()
+        if not client_secret:
+            return {"status": "error", "message": "Set your OAuth Client Secret in Settings first."}
 
-        token_result: Dict[str, Any] = {"status": "error", "message": "Authentication timed out."}
+        # Generate PKCE code verifier and challenge
+        code_verifier = secrets.token_urlsafe(64)
+        code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(code_verifier.encode()).digest()
+        ).rstrip(b"=").decode()
+
+        auth_code_result: Dict[str, Any] = {"status": "error", "message": "Authentication timed out."}
         server_ready = threading.Event()
 
         class OAuthHandler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
-                # Serve a page that extracts the token from the URL fragment
+                # Extract authorization code from query string
+                parsed = urlparse(self.path)
+                params = parse_qs(parsed.query)
+                code = params.get("code", [None])[0]
+                error = params.get("error", [None])[0]
+
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
-                self.wfile.write(b"""<!DOCTYPE html><html><body>
-                <p>Completing sign-in...</p>
-                <script>
-                const params = new URLSearchParams(window.location.hash.substring(1));
-                const token = params.get('access_token');
-                if (token) {
-                    fetch('/token', {method:'POST', body: token}).then(() => {
-                        document.body.innerHTML = '<h2>Sign-in complete. You can close this tab.</h2>';
-                    });
-                } else {
-                    document.body.innerHTML = '<h2>Sign-in failed. Please close this tab and try again.</h2>';
-                }
-                </script></body></html>""")
 
-            def do_POST(self):
-                length = int(self.headers.get("Content-Length", 0))
-                body = self.rfile.read(length).decode()
-                if body:
-                    token_result["status"] = "ok"
-                    token_result["access_token"] = body
-                    token_result["message"] = ""
-                self.send_response(200)
-                self.send_header("Content-Type", "text/plain")
-                self.end_headers()
-                self.wfile.write(b"ok")
+                if code:
+                    auth_code_result["status"] = "ok"
+                    auth_code_result["code"] = code
+                    self.wfile.write(b"<html><body><h2>Sign-in complete. You can close this tab.</h2></body></html>")
+                elif error:
+                    auth_code_result["message"] = f"Authorization denied: {error}"
+                    self.wfile.write(b"<html><body><h2>Sign-in failed. Please close this tab and try again.</h2></body></html>")
+                else:
+                    self.wfile.write(b"<html><body><h2>Sign-in failed. Please close this tab and try again.</h2></body></html>")
+
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
 
             def log_message(self, format, *args):
-                pass  # Suppress server logs
+                pass
 
         try:
             server = http.server.HTTPServer(("127.0.0.1", 24817), OAuthHandler)
@@ -185,16 +225,48 @@ class AppApi:
         auth_params = urlencode({
             "client_id": client_id,
             "redirect_uri": redirect_uri,
-            "response_type": "token",
+            "response_type": "code",
             "scope": "https://www.googleapis.com/auth/drive.readonly",
-            "include_granted_scopes": "true",
+            "access_type": "offline",
+            "prompt": "consent",
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
         })
         auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{auth_params}"
         webbrowser.open(auth_url)
 
         server_thread.join(timeout=120)
         server.server_close()
-        return token_result
+
+        if auth_code_result["status"] != "ok" or "code" not in auth_code_result:
+            return {"status": "error", "message": auth_code_result.get("message", "Authentication failed.")}
+
+        # Exchange authorization code for tokens
+        try:
+            exchange_data = urlencode({
+                "code": auth_code_result["code"],
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
+                "code_verifier": code_verifier,
+            }).encode()
+            req = Request("https://oauth2.googleapis.com/token", data=exchange_data, method="POST")
+            req.add_header("Content-Type", "application/x-www-form-urlencoded")
+            with urlopen(req, timeout=15) as resp:
+                tokens = json.loads(resp.read().decode())
+        except Exception as exc:
+            return {"status": "error", "message": f"Token exchange failed: {exc}"}
+
+        access_token = tokens.get("access_token")
+        refresh_token = tokens.get("refresh_token")
+        if not access_token:
+            return {"status": "error", "message": "No access token received from Google."}
+
+        if refresh_token:
+            set_oauth_refresh_token(refresh_token)
+
+        return {"status": "ok", "access_token": access_token}
 
     def save_netlify_token(self, value: str) -> Dict[str, Any]:
         """Save Netlify token and verify it."""
@@ -1658,6 +1730,8 @@ def _build_html(state: AppState) -> str:
     initial_state = {
         "api_key": get_google_maps_api_key() or "",
         "oauth_client_id": get_oauth_client_id() or "",
+        "oauth_client_secret": get_oauth_client_secret() or "",
+        "has_refresh_token": bool(get_oauth_refresh_token()),
         "marker_size": state.marker_size,
         "heading": state.heading,
         "heic_supported": HEIC_SUPPORTED,

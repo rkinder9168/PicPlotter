@@ -37,6 +37,8 @@ API_KEY_FIELD = "google_maps_api_key"
 NETLIFY_TOKEN_FIELD = "netlify_token"
 NETLIFY_SITE_ID_FIELD = "netlify_site_id"
 OAUTH_CLIENT_ID_FIELD = "google_oauth_client_id"
+OAUTH_CLIENT_SECRET_FIELD = "google_oauth_client_secret"
+OAUTH_REFRESH_TOKEN_FIELD = "google_oauth_refresh_token"
 
 
 # =============================================================================
@@ -162,4 +164,40 @@ def set_oauth_client_id(value: str) -> None:
         data[OAUTH_CLIENT_ID_FIELD] = cleaned
     else:
         data.pop(OAUTH_CLIENT_ID_FIELD, None)
+    _save_config(data)
+
+
+def get_oauth_client_secret() -> Optional[str]:
+    """Return Google OAuth Client Secret from config, if available."""
+    data = _load_config()
+    secret = data.get(OAUTH_CLIENT_SECRET_FIELD)
+    return secret.strip() if isinstance(secret, str) else None
+
+
+def set_oauth_client_secret(value: str) -> None:
+    """Save the Google OAuth Client Secret to config."""
+    data = _load_config()
+    cleaned = value.strip()
+    if cleaned:
+        data[OAUTH_CLIENT_SECRET_FIELD] = cleaned
+    else:
+        data.pop(OAUTH_CLIENT_SECRET_FIELD, None)
+    _save_config(data)
+
+
+def get_oauth_refresh_token() -> Optional[str]:
+    """Return stored OAuth refresh token, if available."""
+    data = _load_config()
+    token = data.get(OAUTH_REFRESH_TOKEN_FIELD)
+    return token.strip() if isinstance(token, str) else None
+
+
+def set_oauth_refresh_token(value: str) -> None:
+    """Save or clear the OAuth refresh token."""
+    data = _load_config()
+    cleaned = value.strip() if value else ""
+    if cleaned:
+        data[OAUTH_REFRESH_TOKEN_FIELD] = cleaned
+    else:
+        data.pop(OAUTH_REFRESH_TOKEN_FIELD, None)
     _save_config(data)
