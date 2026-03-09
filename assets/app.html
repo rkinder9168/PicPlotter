@@ -228,6 +228,16 @@
             font-size: 12px;
         }
 
+        @keyframes save-flash {
+            0% { background: var(--accent); }
+            50% { background: #3cd48a; }
+            100% { background: var(--accent); }
+        }
+
+        .save-flash {
+            animation: save-flash 0.6s ease;
+        }
+
         .panel input[disabled] {
             color: var(--muted);
         }
@@ -1047,7 +1057,6 @@
                                 </select>
                                 <div class="project-controls">
                                     <button id="project-save" class="primary">Save</button>
-                                    <button id="project-load" class="secondary">Load</button>
                                     <button id="project-delete" class="danger">Delete</button>
                                 </div>
                             </div>
@@ -1278,7 +1287,6 @@
         const clientAddressInput = document.getElementById("client-address");
         const projectSelect = document.getElementById("project-select");
         const projectSaveBtn = document.getElementById("project-save");
-        const projectLoadBtn = document.getElementById("project-load");
         const projectDeleteBtn = document.getElementById("project-delete");
         const qualityInput = document.getElementById("quality");
         const qualityValue = document.getElementById("quality-value");
@@ -2935,6 +2943,8 @@
         }
 
         /* ── Project save/load ─────────────────────────────────── */
+        let currentProjectName = "";  // tracks the last saved/loaded project name
+
         function populateProjectSelect(projects, selectName) {
             projectSelect.innerHTML = '<option value="">(New Project)</option>';
             (projects || []).forEach(name => {
@@ -2943,7 +2953,7 @@
                 opt.textContent = name;
                 projectSelect.appendChild(opt);
             });
-            if (selectName) {
+            if (selectName != null) {
                 projectSelect.value = selectName;
             }
         }
@@ -2966,23 +2976,28 @@
             };
             const result = await window.pywebview.api.save_project(payload);
             if (result.status === "ok") {
+                currentProjectName = name;
                 populateProjectSelect(result.projects, name);
                 setStatus(`Project "${name}" saved.`);
+                // Flash the save button for visual feedback
+                projectSaveBtn.textContent = "Saved!";
+                projectSaveBtn.classList.add("save-flash");
+                setTimeout(() => {
+                    projectSaveBtn.textContent = "Save";
+                    projectSaveBtn.classList.remove("save-flash");
+                }, 1200);
             } else {
                 setStatus(result.message || "Save failed.", true);
             }
         }
 
-        async function loadSelectedProject() {
+        async function loadProject(name) {
             if (!window.pywebview || !window.pywebview.api) return;
-            const name = projectSelect.value;
-            if (!name) {
-                setStatus("Select a project to load.", true);
-                return;
-            }
+            if (!name) return;
             setStatus(`Loading project "${name}"...`);
             const result = await window.pywebview.api.load_project(name);
             if (result.status === "ok") {
+                currentProjectName = name;
                 const d = result.data;
                 projectNameInput.value = d.project_name || "";
                 proposalLinkInput.value = d.proposal_link || "";
@@ -2996,6 +3011,9 @@
                 if (d.output_folder) {
                     outputFolderInput.value = d.output_folder;
                     state.outputFolder = d.output_folder;
+                } else {
+                    outputFolderInput.value = "(Default - same as photos)";
+                    state.outputFolder = null;
                 }
                 // Restore photos
                 if (result.photos) {
@@ -3016,6 +3034,53 @@
             }
         }
 
+        async function clearForNewProject() {
+            currentProjectName = "";
+            projectNameInput.value = "";
+            proposalLinkInput.value = "";
+            clientNameInput.value = "";
+            clientCompanyInput.value = "";
+            clientAddressInput.value = "";
+            qualityInput.value = 30;
+            qualityValue.textContent = "30%";
+            outputFolderInput.value = "(Default - same as photos)";
+            state.outputFolder = null;
+            // Clear photos via backend
+            if (window.pywebview && window.pywebview.api) {
+                const result = await window.pywebview.api.clear_photos();
+                state.photos = [];
+                state.gpsCount = 0;
+                state.placedCount = 0;
+                applyGroupPayload(result);
+                renderGroups();
+                renderFileList();
+            }
+            setStatus("New project started.");
+        }
+
+        async function onProjectSelectChange() {
+            const selected = projectSelect.value;
+            if (selected) {
+                // User picked a saved project — load it
+                await loadProject(selected);
+            } else {
+                // User picked "(New Project)" — prompt if there are photos
+                if (state.photos.length > 0 || projectNameInput.value.trim()) {
+                    const ok = await showConfirm({
+                        title: "Start new project?",
+                        message: "Any unsaved changes will be lost. Save first if needed.",
+                        acceptLabel: "New Project"
+                    });
+                    if (!ok) {
+                        // Revert dropdown to previous selection
+                        projectSelect.value = currentProjectName;
+                        return;
+                    }
+                }
+                await clearForNewProject();
+            }
+        }
+
         async function deleteSelectedProject() {
             if (!window.pywebview || !window.pywebview.api) return;
             const name = projectSelect.value;
@@ -3023,8 +3088,15 @@
                 setStatus("Select a project to delete.", true);
                 return;
             }
+            const ok = await showConfirm({
+                title: `Delete project "${name}"?`,
+                message: "This cannot be undone.",
+                acceptLabel: "Delete"
+            });
+            if (!ok) return;
             const result = await window.pywebview.api.delete_project(name);
             if (result.status === "ok") {
+                currentProjectName = "";
                 populateProjectSelect(result.projects, "");
                 setStatus(`Project "${name}" deleted.`);
             } else {
@@ -3034,7 +3106,7 @@
 
         populateProjectSelect(INITIAL_STATE.projects || []);
         projectSaveBtn.addEventListener("click", saveCurrentProject);
-        projectLoadBtn.addEventListener("click", loadSelectedProject);
+        projectSelect.addEventListener("change", onProjectSelectChange);
         projectDeleteBtn.addEventListener("click", deleteSelectedProject);
 
         qualityInput.addEventListener("input", () => {

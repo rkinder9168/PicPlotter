@@ -138,8 +138,6 @@ class AppApi:
         name = (payload.get("name") or "").strip()
         if not name:
             return {"status": "error", "message": "Project name is required."}
-        # Separate local files from Drive files
-        local_files = [f for f in self._state.selected_files if f not in self._state.drive_sources]
         data = {
             "project_name": payload.get("project_name", ""),
             "proposal_link": payload.get("proposal_link", ""),
@@ -149,7 +147,7 @@ class AppApi:
             "quality": payload.get("quality", 30),
             "output_folder": self._state.output_folder,
             "drive_folder_url": self._state.drive_folder_url,
-            "local_files": local_files,
+            "selected_files": list(self._state.selected_files),
             "drive_sources": dict(self._state.drive_sources),
         }
         _save_project(name, data)
@@ -178,28 +176,21 @@ class AppApi:
         self._state.drive_folder_url = data.get("drive_folder_url")
         self._state.drive_access_token = None
 
-        # Re-import local files
-        for filepath in data.get("local_files", []):
-            if not Path(filepath).exists():
-                errors.append(f"{Path(filepath).name}: file not found")
-                continue
-            if not is_supported_format(filepath):
-                continue
-            try:
-                metadata = get_image_metadata(filepath)
-            except Exception as exc:
-                errors.append(f"{Path(filepath).name}: {exc}")
-                continue
-            self._state.file_metadata[filepath] = metadata
-            self._state.selected_files.append(filepath)
-            loaded_local += 1
-
-        # Re-import Drive files
         drive_sources = data.get("drive_sources", {})
-        if drive_sources:
-            api_key = get_google_maps_api_key()
-            for vpath, file_id in drive_sources.items():
-                filename = vpath.split("/", 1)[-1] if "/" in vpath else file_id
+        api_key = get_google_maps_api_key() if drive_sources else None
+
+        # Walk selected_files in saved order to preserve sequence
+        saved_files = data.get("selected_files", [])
+        # Backwards compat: fall back to local_files + drive_sources keys
+        if not saved_files:
+            saved_files = list(data.get("local_files", []))
+            saved_files.extend(drive_sources.keys())
+
+        for filepath in saved_files:
+            file_id = drive_sources.get(filepath)
+            if file_id:
+                # Drive file
+                filename = filepath.split("/", 1)[-1] if "/" in filepath else file_id
                 try:
                     drive_meta = get_drive_image_metadata(file_id, api_key=api_key)
                     if drive_meta and drive_meta.latitude is not None:
@@ -216,26 +207,39 @@ class AppApi:
                             except (ValueError, TypeError):
                                 pass
                         meta = ImageMetadata(
-                            filepath=Path(vpath),
+                            filepath=Path(filepath),
                             filename=filename,
-                            gps=gps,
-                            timestamp=ts,
+                            gps=gps, timestamp=ts,
                             camera_make=drive_meta.camera_make,
                             camera_model=drive_meta.camera_model,
                         )
                     else:
                         meta = ImageMetadata(
-                            filepath=Path(vpath),
-                            filename=filename,
+                            filepath=Path(filepath), filename=filename,
                             gps=None, timestamp=None,
                             camera_make=None, camera_model=None,
                         )
-                    self._state.selected_files.append(vpath)
-                    self._state.file_metadata[vpath] = meta
-                    self._state.drive_sources[vpath] = file_id
+                    self._state.selected_files.append(filepath)
+                    self._state.file_metadata[filepath] = meta
+                    self._state.drive_sources[filepath] = file_id
                     loaded_drive += 1
                 except Exception as exc:
                     errors.append(f"{filename}: {exc}")
+            else:
+                # Local file
+                if not Path(filepath).exists():
+                    errors.append(f"{Path(filepath).name}: file not found")
+                    continue
+                if not is_supported_format(filepath):
+                    continue
+                try:
+                    metadata = get_image_metadata(filepath)
+                except Exception as exc:
+                    errors.append(f"{Path(filepath).name}: {exc}")
+                    continue
+                self._state.file_metadata[filepath] = metadata
+                self._state.selected_files.append(filepath)
+                loaded_local += 1
 
         self._sync_group_assignments()
 
