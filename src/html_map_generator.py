@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from PIL import Image
 
-from src.config import get_asset_path
+from src.config import get_asset_path, get_user_logo_path
 from src.coordinate_transform import AffineTransform, PixelPoint
 from src.exif_extractor import GPSCoordinates
 from src.marker_utils import get_colorizer
@@ -134,7 +134,7 @@ class HTMLMapGenerator:
     # Marker display size in pixels (the asset is large, we resize it)
     MARKER_DISPLAY_SIZE = 96
     MARKER_ASSET_SIZE = 256
-    LOGO_FILENAME = "everline-horizontal-logo.jpg"
+    DEFAULT_LOGO_FILENAME = "everline-horizontal-logo.jpg"
     LOGO_MAX_WIDTH = 317
     LOGO_MAX_HEIGHT = 92
 
@@ -146,6 +146,10 @@ class HTMLMapGenerator:
         client_name: Optional[str] = None,
         client_company: Optional[str] = None,
         client_address: Optional[str] = None,
+        company_name: Optional[str] = None,
+        company_address: Optional[str] = None,
+        company_phone: Optional[str] = None,
+        company_website: Optional[str] = None,
     ):
         """
         Initialize the HTML map generator.
@@ -157,6 +161,10 @@ class HTMLMapGenerator:
             client_name: Optional client name to show in the export header
             client_company: Optional company name to show in the export header
             client_address: Optional address to show in the export header
+            company_name: Optional preparing company name (for Prepared by block)
+            company_address: Optional preparing company address
+            company_phone: Optional preparing company phone
+            company_website: Optional preparing company website
         """
         self.project_name = project_name
         self.marker_size = marker_size
@@ -165,6 +173,10 @@ class HTMLMapGenerator:
         self.client_name = client_name.strip() if client_name else ""
         self.client_company = client_company.strip() if client_company else ""
         self.client_address = client_address.strip() if client_address else ""
+        self.company_name = company_name.strip() if company_name else ""
+        self.company_address = company_address.strip() if company_address else ""
+        self.company_phone = company_phone.strip() if company_phone else ""
+        self.company_website = company_website.strip() if company_website else ""
         self._marker_b64: Optional[str] = None
         self._logo_b64: Optional[str] = None
 
@@ -195,11 +207,18 @@ class HTMLMapGenerator:
         return self._marker_b64
 
     def _get_logo_image_src(self) -> str:
-        """Load and encode the logo image as a data URI."""
+        """Load and encode the logo image as a data URI (user logo preferred)."""
         if self._logo_b64 is None:
-            logo_path = get_asset_path(self.LOGO_FILENAME)
+            user_logo = get_user_logo_path()
+            if user_logo is not None and user_logo.exists():
+                logo_path = user_logo
+            else:
+                logo_path = get_asset_path(self.DEFAULT_LOGO_FILENAME)
+
             if logo_path.exists():
                 with Image.open(logo_path) as img:
+                    if img.mode not in ("RGB", "RGBA"):
+                        img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
                     img.thumbnail(
                         (self.LOGO_MAX_WIDTH, self.LOGO_MAX_HEIGHT),
                         Image.Resampling.LANCZOS
@@ -588,6 +607,44 @@ class HTMLMapGenerator:
             return ""
         return group.name or ""
 
+    def _build_prepared_by_html(self, format_multiline) -> str:
+        """Render the 'Prepared by' sidebar block, or empty string if no fields set."""
+        rows = []
+        if self.company_name:
+            rows.append(
+                f'<div class="prepared-name">{html.escape(self.company_name)}</div>'
+            )
+        if self.company_address:
+            formatted = format_multiline(self.company_address)
+            if formatted:
+                rows.append(f'<div class="prepared-line">{formatted}</div>')
+        if self.company_phone:
+            rows.append(
+                f'<div class="prepared-line">{html.escape(self.company_phone)}</div>'
+            )
+        if self.company_website:
+            site = self.company_website
+            if "." in site:
+                rows.append(
+                    '<div class="prepared-line">'
+                    f'<a href="{html.escape(site, quote=True)}" target="_blank" rel="noopener">'
+                    f'{html.escape(site)}</a>'
+                    "</div>"
+                )
+            else:
+                rows.append(
+                    f'<div class="prepared-line">{html.escape(site)}</div>'
+                )
+
+        if not rows:
+            return ""
+        return (
+            '<div id="prepared-by">'
+            '<div class="prepared-label">Prepared by</div>'
+            f'{"".join(rows)}'
+            "</div>"
+        )
+
     def _generate_html(
         self,
         aerial_src: str,
@@ -614,7 +671,7 @@ class HTMLMapGenerator:
 
         logo_src = self._get_logo_image_src()
         logo_html = (
-            f'<img id="logo" src="{logo_src}" alt="EverLine logo">'
+            f'<img id="logo" src="{logo_src}" alt="Company logo">'
             if logo_src else ""
         )
         project_label = html.escape(self.project_name)
@@ -660,8 +717,12 @@ class HTMLMapGenerator:
         client_info_html = ""
         if client_rows:
             client_info_html = f'<div id="client-info">{"".join(client_rows)}</div>'
+
+        prepared_by_html = self._build_prepared_by_html(format_client_value)
+
         sidebar_brand_html = (
-            f'<div id="sidebar-brand">{logo_html}{client_info_html}{proposal_link_html}</div>'
+            f'<div id="sidebar-brand">{logo_html}{client_info_html}'
+            f'{prepared_by_html}{proposal_link_html}</div>'
         )
 
         has_marker_images = bool(markers_by_color)
@@ -1406,6 +1467,47 @@ class HTMLMapGenerator:
             font-weight: 600;
             color: var(--sidebar-text);
             word-break: break-word;
+        }}
+
+        #prepared-by {{
+            width: 100%;
+            border: 1px solid var(--sidebar-border);
+            border-radius: 6px;
+            padding: 8px 10px;
+            background: #f5f5f5;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            color: var(--sidebar-text);
+        }}
+
+        .prepared-label {{
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #6b6b6b;
+            margin-bottom: 2px;
+        }}
+
+        .prepared-name {{
+            font-size: 13px;
+            font-weight: 700;
+            word-break: break-word;
+        }}
+
+        .prepared-line {{
+            font-size: 12px;
+            word-break: break-word;
+        }}
+
+        .prepared-line a {{
+            color: #1f6feb;
+            text-decoration: none;
+        }}
+
+        .prepared-line a:hover {{
+            text-decoration: underline;
         }}
 
         @media (max-width: 1200px) and (min-width: 901px) {{

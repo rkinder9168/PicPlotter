@@ -6,11 +6,14 @@ Centralizes configuration, constants, and shared utilities.
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+from PIL import Image, UnidentifiedImageError
 
 
 # =============================================================================
@@ -33,12 +36,18 @@ DEFAULT_MARKER_SIZE = 96
 
 CONFIG_DIR = Path.home() / ".picplotter_auto"
 CONFIG_FILE = CONFIG_DIR / "config.json"
+LOGO_FILE = CONFIG_DIR / "logo.png"
+LOGO_MAX_LONG_EDGE = 512
 API_KEY_FIELD = "google_maps_api_key"
 NETLIFY_TOKEN_FIELD = "netlify_token"
 NETLIFY_SITE_ID_FIELD = "netlify_site_id"
 OAUTH_CLIENT_ID_FIELD = "google_oauth_client_id"
 OAUTH_CLIENT_SECRET_FIELD = "google_oauth_client_secret"
 OAUTH_REFRESH_TOKEN_FIELD = "google_oauth_refresh_token"
+COMPANY_NAME_FIELD = "company_name"
+COMPANY_ADDRESS_FIELD = "company_address"
+COMPANY_PHONE_FIELD = "company_phone"
+COMPANY_WEBSITE_FIELD = "company_website"
 
 
 # =============================================================================
@@ -250,3 +259,104 @@ def delete_project(name: str) -> bool:
         path.unlink()
         return True
     return False
+
+
+# =============================================================================
+# Branding (user logo + company info)
+# =============================================================================
+
+
+def get_user_logo_path() -> Optional[Path]:
+    """Return path to user-uploaded logo if present, else None."""
+    return LOGO_FILE if LOGO_FILE.exists() else None
+
+
+def set_user_logo_from_bytes(data: bytes) -> None:
+    """
+    Save an uploaded logo as a normalized PNG at LOGO_FILE.
+
+    Accepts JPG/PNG only. Downscales so the longer edge is <= 512px,
+    preserving aspect ratio. Raises ValueError on unsupported format
+    or unreadable image.
+    """
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError("Logo must be a JPG or PNG image") from exc
+
+    fmt = (img.format or "").upper()
+    if fmt not in ("JPEG", "JPG", "PNG"):
+        raise ValueError("Logo must be a JPG or PNG image")
+
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
+
+    long_edge = max(img.size)
+    if long_edge > LOGO_MAX_LONG_EDGE:
+        scale = LOGO_MAX_LONG_EDGE / long_edge
+        new_size = (max(1, int(img.size[0] * scale)), max(1, int(img.size[1] * scale)))
+        img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    img.save(LOGO_FILE, format="PNG")
+
+
+def clear_user_logo() -> None:
+    """Delete the user-uploaded logo, reverting to bundled default."""
+    if LOGO_FILE.exists():
+        LOGO_FILE.unlink()
+
+
+def _normalize_website(value: str) -> str:
+    """
+    Normalize a website string for storage.
+
+    - Trims whitespace.
+    - If non-empty and lacks a scheme, prepends 'https://'.
+    - Preserves explicit 'http://'.
+    - Returns the value as-is (without scheme) when no '.' is present;
+      callers render such values as plain text rather than as a link.
+    """
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return ""
+    lowered = cleaned.lower()
+    has_scheme = lowered.startswith("http://") or lowered.startswith("https://")
+    has_dot = "." in cleaned
+    if not has_scheme and has_dot:
+        return f"https://{cleaned}"
+    return cleaned
+
+
+def get_company_info() -> Dict[str, str]:
+    """Return saved company info as a dict with all four keys (empty strings if unset)."""
+    data = _load_config()
+    return {
+        "company_name": str(data.get(COMPANY_NAME_FIELD, "") or ""),
+        "company_address": str(data.get(COMPANY_ADDRESS_FIELD, "") or ""),
+        "company_phone": str(data.get(COMPANY_PHONE_FIELD, "") or ""),
+        "company_website": str(data.get(COMPANY_WEBSITE_FIELD, "") or ""),
+    }
+
+
+def set_company_info(
+    name: str = "",
+    address: str = "",
+    phone: str = "",
+    website: str = "",
+) -> None:
+    """Save company info to config. Empty values clear the corresponding field."""
+    data = _load_config()
+    fields = {
+        COMPANY_NAME_FIELD: (name or "").strip(),
+        COMPANY_ADDRESS_FIELD: (address or "").strip(),
+        COMPANY_PHONE_FIELD: (phone or "").strip(),
+        COMPANY_WEBSITE_FIELD: _normalize_website(website),
+    }
+    for key, value in fields.items():
+        if value:
+            data[key] = value
+        else:
+            data.pop(key, None)
+    _save_config(data)

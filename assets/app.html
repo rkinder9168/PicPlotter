@@ -283,6 +283,38 @@
             width: 100%;
         }
 
+        .branding-divider {
+            border-top: 1px solid rgba(255,255,255,0.12);
+            margin: 4px 0;
+        }
+
+        .branding-logo-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        #branding-logo-preview {
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+            background: #ffffff;
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 6px;
+            padding: 4px;
+            flex-shrink: 0;
+        }
+
+        .branding-logo-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .branding-logo-buttons button {
+            white-space: nowrap;
+        }
+
         .actions {
             display: flex;
             gap: 8px;
@@ -1046,6 +1078,41 @@
                                             <button id="save-oauth-client-secret" class="secondary">Save</button>
                                         </div>
                                         <div class="hint">Create at console.cloud.google.com &gt; Credentials &gt; OAuth 2.0 Client ID (Desktop app or Web app). For Web app, add <strong>http://127.0.0.1:24817</strong> to Authorized redirect URIs.</div>
+                                    </div>
+
+                                    <div class="branding-divider"></div>
+
+                                    <div>
+                                        <label>Company Logo</label>
+                                        <div class="branding-logo-row">
+                                            <img id="branding-logo-preview" alt="Logo preview">
+                                            <div class="branding-logo-buttons">
+                                                <button id="branding-upload-logo" class="secondary" type="button">Upload Logo</button>
+                                                <button id="branding-clear-logo" class="secondary" type="button">Reset to Default</button>
+                                            </div>
+                                        </div>
+                                        <div id="branding-logo-error" class="hint" style="color:#c33;display:none;"></div>
+                                        <div class="hint">JPG or PNG. Best results with high-contrast, mostly single-color logos on a white or transparent background. Logo changes apply to new exports and editor sessions.</div>
+                                    </div>
+
+                                    <div>
+                                        <label>Company Name</label>
+                                        <input id="branding-company-name" type="text">
+                                    </div>
+
+                                    <div>
+                                        <label>Company Address</label>
+                                        <textarea id="branding-company-address" rows="2"></textarea>
+                                    </div>
+
+                                    <div>
+                                        <label>Phone Number</label>
+                                        <input id="branding-company-phone" type="text">
+                                    </div>
+
+                                    <div>
+                                        <label>Company Website</label>
+                                        <input id="branding-company-website" type="text" placeholder="Optional">
                                     </div>
                                 </div>
                             </div>
@@ -2683,6 +2750,98 @@
             }
         }
 
+        /* ── Branding (logo + company info) ─────────────────────── */
+        const brandingLogoPreview = document.getElementById("branding-logo-preview");
+        const brandingUploadBtn = document.getElementById("branding-upload-logo");
+        const brandingClearBtn = document.getElementById("branding-clear-logo");
+        const brandingLogoError = document.getElementById("branding-logo-error");
+        const brandingCompanyNameInput = document.getElementById("branding-company-name");
+        const brandingCompanyAddressInput = document.getElementById("branding-company-address");
+        const brandingCompanyPhoneInput = document.getElementById("branding-company-phone");
+        const brandingCompanyWebsiteInput = document.getElementById("branding-company-website");
+
+        function setBrandingLogoPreview(uri) {
+            if (uri) {
+                brandingLogoPreview.src = uri;
+                brandingLogoPreview.style.display = "";
+            } else {
+                brandingLogoPreview.removeAttribute("src");
+                brandingLogoPreview.style.display = "none";
+            }
+        }
+
+        function clearBrandingError() {
+            brandingLogoError.textContent = "";
+            brandingLogoError.style.display = "none";
+        }
+
+        function showBrandingError(message) {
+            brandingLogoError.textContent = message || "Could not save logo";
+            brandingLogoError.style.display = "";
+        }
+
+        async function loadBranding() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            const result = await window.pywebview.api.get_branding();
+            if (!result || result.status !== "ok") {
+                return;
+            }
+            setBrandingLogoPreview(result.logo_data_uri);
+            brandingCompanyNameInput.value = result.company_name || "";
+            brandingCompanyAddressInput.value = result.company_address || "";
+            brandingCompanyPhoneInput.value = result.company_phone || "";
+            brandingCompanyWebsiteInput.value = result.company_website || "";
+        }
+
+        async function uploadBrandingLogo() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            clearBrandingError();
+            brandingUploadBtn.disabled = true;
+            try {
+                const result = await window.pywebview.api.select_and_save_logo();
+                if (result && result.status === "cancel") {
+                    return;
+                }
+                if (!result || !result.ok) {
+                    showBrandingError((result && result.error) || "Could not save logo");
+                    return;
+                }
+                setBrandingLogoPreview(result.logo_data_uri);
+            } finally {
+                brandingUploadBtn.disabled = false;
+            }
+        }
+
+        async function clearBrandingLogo() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            clearBrandingError();
+            const result = await window.pywebview.api.clear_logo();
+            if (result && result.ok) {
+                setBrandingLogoPreview(result.logo_data_uri);
+            }
+        }
+
+        async function saveBrandingCompanyInfo() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            const result = await window.pywebview.api.save_company_info(
+                brandingCompanyNameInput.value,
+                brandingCompanyAddressInput.value,
+                brandingCompanyPhoneInput.value,
+                brandingCompanyWebsiteInput.value,
+            );
+            if (result && result.status === "ok" && typeof result.company_website === "string") {
+                brandingCompanyWebsiteInput.value = result.company_website;
+            }
+        }
+
         async function deployToWeb() {
             if (!window.pywebview || !window.pywebview.api) {
                 return;
@@ -2923,6 +3082,19 @@
         saveOauthClientSecretBtn.addEventListener("click", saveOauthClientSecret);
         saveNetlifyTokenBtn.addEventListener("click", saveNetlifyToken);
 
+        brandingUploadBtn.addEventListener("click", uploadBrandingLogo);
+        brandingClearBtn.addEventListener("click", clearBrandingLogo);
+        [
+            brandingCompanyNameInput,
+            brandingCompanyAddressInput,
+            brandingCompanyPhoneInput,
+            brandingCompanyWebsiteInput,
+        ].forEach(el => {
+            if (el) {
+                el.addEventListener("blur", saveBrandingCompanyInfo);
+            }
+        });
+
         const settingsToggle = document.getElementById("settings-toggle");
         const settingsContent = document.getElementById("settings-content");
         settingsToggle.addEventListener("click", () => {
@@ -3123,6 +3295,7 @@
         window.addEventListener("pywebviewready", () => {
             refreshGroups();
             loadNetlifyToken();
+            loadBranding();
         });
 
         /* Editor logic */

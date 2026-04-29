@@ -12,7 +12,9 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 from PIL import Image, ImageDraw
 
-from src.config import get_asset_path
+from src.config import get_asset_path, get_user_logo_path
+
+MARKER_BASE_SIZE = 256
 
 
 def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
@@ -37,6 +39,29 @@ def hsl_to_rgb(h: float, s: float, l: float) -> Tuple[int, int, int]:
     """Convert HSL (0-1) to RGB (0-255)."""
     r, g, b = colorsys.hls_to_rgb(h, l, s)
     return int(r * 255), int(g * 255), int(b * 255)
+
+
+def _normalize_to_square(image: Image.Image, size: int) -> Image.Image:
+    """
+    Center the image on a transparent square canvas of the given size.
+
+    Longer edge is scaled to `size`, aspect ratio is preserved. Used when
+    a user-supplied logo (which may be wide or tall) becomes the marker
+    base — guarantees a consistent square footprint downstream.
+    """
+    if image.mode != "RGBA":
+        image = image.convert("RGBA")
+    w, h = image.size
+    if w == 0 or h == 0:
+        return Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    long_edge = max(w, h)
+    scale = size / long_edge
+    new_w = max(1, int(round(w * scale)))
+    new_h = max(1, int(round(h * scale)))
+    resized = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    canvas.paste(resized, ((size - new_w) // 2, (size - new_h) // 2), resized)
+    return canvas
 
 
 def colorize_marker(
@@ -150,12 +175,23 @@ class MarkerColorizer:
         self._load_base_image()
 
     def _load_base_image(self) -> None:
-        """Load the base marker image from assets."""
+        """Load the base marker image, preferring user-uploaded logo over bundled default."""
+        user_logo = get_user_logo_path()
+        if user_logo is not None and user_logo.exists():
+            raw = Image.open(user_logo).convert("RGBA")
+            self._base_image = _normalize_to_square(raw, MARKER_BASE_SIZE)
+            return
+
         marker_path = get_asset_path("marker_outlined_transparent.png")
         if marker_path.exists():
             self._base_image = Image.open(marker_path).convert("RGBA")
         else:
             self._base_image = None
+
+    def reset(self) -> None:
+        """Clear cache and reload base image (call after logo upload/clear)."""
+        self._cache.clear()
+        self._load_base_image()
 
     def get_colored_marker(self, color: str, size: int) -> Image.Image:
         """
@@ -217,3 +253,10 @@ def get_colorizer() -> MarkerColorizer:
     if _colorizer is None:
         _colorizer = MarkerColorizer()
     return _colorizer
+
+
+def reset_colorizer() -> None:
+    """Reset the global colorizer cache and reload its base image."""
+    global _colorizer
+    if _colorizer is not None:
+        _colorizer.reset()

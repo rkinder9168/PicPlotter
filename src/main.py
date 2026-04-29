@@ -50,6 +50,11 @@ from src.config import (
     save_project as _save_project,
     load_project as _load_project,
     delete_project as _delete_project,
+    get_user_logo_path,
+    set_user_logo_from_bytes,
+    clear_user_logo,
+    get_company_info,
+    set_company_info,
 )
 from src.netlify_deployer import NetlifyDeployer, verify_token as verify_netlify_token
 from src.exif_extractor import (
@@ -78,7 +83,7 @@ from src.html_map_generator import (
 )
 from src.image_processor import ImageProcessor
 from src.kmz_generator import create_kmz_from_files
-from src.marker_utils import get_colorizer
+from src.marker_utils import get_colorizer, reset_colorizer
 from src.photo_groups import GroupAssignments, DEFAULT_GROUPS, PRESET_COLORS, PhotoGroup
 from src.utils import get_default_output_path, open_file_in_default_app, open_folder_containing
 from src.coordinate_transform import PixelPoint
@@ -870,6 +875,85 @@ class AppApi:
         self._state.output_folder = None
         return {"status": "ok"}
 
+    def _logo_data_uri(self) -> str:
+        path = get_user_logo_path()
+        if path is None:
+            path = get_asset_path("everline-horizontal-logo.jpg")
+        if not path or not path.exists():
+            return ""
+        try:
+            with Image.open(path) as img:
+                if img.mode not in ("RGB", "RGBA"):
+                    img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
+                buffer = io.BytesIO()
+                img.save(buffer, format="PNG")
+                b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                return f"data:image/png;base64,{b64}"
+        except (OSError, ValueError):
+            return ""
+
+    def get_branding(self) -> Dict[str, Any]:
+        info = get_company_info()
+        return {
+            "status": "ok",
+            "logo_data_uri": self._logo_data_uri(),
+            "has_user_logo": get_user_logo_path() is not None,
+            **info,
+        }
+
+    def select_and_save_logo(self) -> Dict[str, Any]:
+        if not self._window:
+            return {"status": "error", "ok": False, "error": "Window not ready"}
+
+        result = self._window.create_file_dialog(
+            webview.FileDialog.OPEN,
+            allow_multiple=False,
+            file_types=("Image files (*.jpg;*.jpeg;*.png)",),
+        )
+        if not result:
+            return {"status": "cancel", "ok": False}
+
+        try:
+            data = Path(result[0]).read_bytes()
+        except OSError as exc:
+            return {"status": "error", "ok": False, "error": f"Could not read file: {exc}"}
+
+        try:
+            set_user_logo_from_bytes(data)
+        except ValueError as exc:
+            return {"status": "error", "ok": False, "error": str(exc)}
+
+        reset_colorizer()
+        return {
+            "status": "ok",
+            "ok": True,
+            "logo_data_uri": self._logo_data_uri(),
+        }
+
+    def clear_logo(self) -> Dict[str, Any]:
+        clear_user_logo()
+        reset_colorizer()
+        return {
+            "status": "ok",
+            "ok": True,
+            "logo_data_uri": self._logo_data_uri(),
+        }
+
+    def save_company_info(
+        self,
+        company_name: str = "",
+        company_address: str = "",
+        company_phone: str = "",
+        company_website: str = "",
+    ) -> Dict[str, Any]:
+        set_company_info(
+            company_name,
+            company_address,
+            company_phone,
+            company_website,
+        )
+        return {"status": "ok", **get_company_info()}
+
     def get_editor_state(self) -> Dict[str, Any]:
         if not self._state.selected_files:
             return {"status": "empty", "message": "No photos selected."}
@@ -991,6 +1075,7 @@ class AppApi:
                     client_name=payload.get("client_name"),
                     client_company=payload.get("client_company"),
                     client_address=payload.get("client_address"),
+                    **get_company_info(),
                 )
 
                 result_path = generator.generate_single_html(
@@ -1086,6 +1171,7 @@ class AppApi:
                 client_name=payload.get("client_name"),
                 client_company=payload.get("client_company"),
                 client_address=payload.get("client_address"),
+                **get_company_info(),
             )
 
             result_path = generator.generate_single_html(
@@ -1174,6 +1260,7 @@ class AppApi:
                     client_name=payload.get("client_name"),
                     client_company=payload.get("client_company"),
                     client_address=payload.get("client_address"),
+                    **get_company_info(),
                 )
 
                 html_content = generator.generate_single_html(
@@ -1281,6 +1368,7 @@ class AppApi:
                     client_name=payload.get("client_name"),
                     client_company=payload.get("client_company"),
                     client_address=payload.get("client_address"),
+                    **get_company_info(),
                 )
 
                 html_content = generator.generate_single_html(
