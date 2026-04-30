@@ -1440,7 +1440,7 @@ class HTMLMapGenerator:
             border: 1px solid var(--sidebar-border);
             border-radius: 6px;
             padding: 8px 10px;
-            background: #e6e6e6;
+            background: #f5f5f5;
             text-align: left;
             display: flex;
             flex-direction: column;
@@ -1469,10 +1469,8 @@ class HTMLMapGenerator:
 
         #prepared-by {{
             width: 100%;
-            border: 1px solid var(--sidebar-border);
-            border-radius: 6px;
             padding: 8px 10px;
-            background: #f5f5f5;
+            background: transparent;
             text-align: center;
             display: flex;
             flex-direction: column;
