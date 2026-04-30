@@ -640,7 +640,6 @@ class HTMLMapGenerator:
             return ""
         return (
             '<div id="prepared-by">'
-            '<div class="prepared-label">Prepared by</div>'
             f'{"".join(rows)}'
             "</div>"
         )
@@ -720,9 +719,13 @@ class HTMLMapGenerator:
 
         prepared_by_html = self._build_prepared_by_html(format_client_value)
 
+        divider_html = ""
+        if (prepared_by_html or logo_html) and client_info_html:
+            divider_html = '<div class="sidebar-divider"></div>'
+
         sidebar_brand_html = (
-            f'<div id="sidebar-brand">{logo_html}{client_info_html}'
-            f'{prepared_by_html}{proposal_link_html}</div>'
+            f'<div id="sidebar-brand">{logo_html}{prepared_by_html}'
+            f'{divider_html}{client_info_html}{proposal_link_html}</div>'
         )
 
         has_marker_images = bool(markers_by_color)
@@ -1407,6 +1410,7 @@ class HTMLMapGenerator:
             display: block;
         }}
 
+        #logo + #prepared-by,
         #logo + #client-info {{
             margin-top: 12px;
         }}
@@ -1469,19 +1473,18 @@ class HTMLMapGenerator:
             border-radius: 6px;
             padding: 8px 10px;
             background: #f5f5f5;
-            text-align: left;
+            text-align: center;
             display: flex;
             flex-direction: column;
             gap: 4px;
             color: var(--sidebar-text);
         }}
 
-        .prepared-label {{
-            font-size: 10px;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: #6b6b6b;
-            margin-bottom: 2px;
+        .sidebar-divider {{
+            width: 100%;
+            height: 1px;
+            background: var(--sidebar-border);
+            margin: 4px 0;
         }}
 
         .prepared-name {{
