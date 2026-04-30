@@ -739,18 +739,10 @@ class HTMLMapGenerator:
             marker_bg_size = "contain"
             marker_border = "none"
             marker_border_radius = "0"
-            marker_text_color = "black"
-            marker_text_shadow = "1px 1px 2px rgba(255,255,255,0.8)"
-            marker_text_top = "59%"  # Offset down 9% for optical centering
-            marker_text_left = "55%"  # Offset right 5%
         else:
             marker_bg_size = "auto"
             marker_border = "2px solid white"
             marker_border_radius = "50%"
-            marker_text_color = "white"
-            marker_text_shadow = "2px 2px 4px rgba(0,0,0,0.8)"
-            marker_text_top = "50%"  # Centered on fallback circle
-            marker_text_left = "50%"  # Centered on fallback circle
 
         legend_rows = []
         for item in legend_items:
@@ -1036,13 +1028,19 @@ class HTMLMapGenerator:
 
         .marker-number {{
             position: absolute;
-            top: {marker_text_top};
-            left: {marker_text_left};
-            transform: translate(-50%, -50%);
-            color: {marker_text_color};
+            bottom: 4%;
+            right: 4%;
+            background: #ffffff;
+            color: #111111;
             font-size: var(--marker-font-size);
-            font-weight: bold;
-            text-shadow: {marker_text_shadow};
+            font-weight: 700;
+            line-height: 1;
+            padding: 0.15em 0.35em;
+            border-radius: 4px;
+            border: 1px solid rgba(0, 0, 0, 0.25);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+            min-width: 1em;
+            text-align: center;
             pointer-events: none;
         }}
 
