@@ -31,6 +31,14 @@ This complexity made the app impractical for general public distribution.
 - Local HTML and KMZ exports remain self-contained (download photos automatically)
 - No new Python dependencies (uses stdlib `urllib`)
 
+### v3.2 - User-Configurable Branding
+- Replace hardcoded EverLine branding with global, user-configurable assets
+- Logo upload (JPG/PNG, normalized to ≤ 512px PNG) becomes the photo marker base AND the HTML sidebar header logo
+- Group identity moves from pixel-tinting the logo to drawing a colored rectangular outline around it — preserves brand colors while keeping groups visually distinct
+- Marker numbers move to a small white badge in the lower-right corner so they remain readable against any logo
+- New "Prepared by" block in HTML deliverables (company name, address, phone, optional website) sits alongside the existing client info; website strings are normalized (auto-prepend `https://`, render plain text when no `.`)
+- Settings stored globally at `~/.picplotter_auto/logo.png` and in `~/.picplotter_auto/config.json`; bundled EverLine assets remain as fallback
+
 ---
 
 ## Solution: Hybrid Architecture
@@ -172,6 +180,17 @@ Projects are saved as individual JSON files in `~/.picplotter_auto/projects/{nam
 - Image quality setting, output folder, Drive folder URL
 
 The UI provides a dropdown selector with Save/Load/Delete controls above the project fields. The project list is populated from the initial state on launch and updated dynamically after save/delete operations.
+
+---
+
+## Branding (Global)
+
+Branding is intentionally global rather than per-project — the typical user is one company shipping every deliverable under the same identity, so re-entering it per project would be churn.
+
+- Logo file lives at `~/.picplotter_auto/logo.png` (always normalized to PNG on save). Lookup precedence in `MarkerColorizer._load_base_image()` and `HTMLMapGenerator._get_logo_image_src()`: user file → bundled fallback (`assets/marker_outlined_transparent.png`, `assets/everline-horizontal-logo.jpg`).
+- Company info (name, address, phone, website) lives in the existing `~/.picplotter_auto/config.json`.
+- After a logo upload, `reset_colorizer()` invalidates the in-memory marker cache so the next editor session and next export pick up the new logo.
+- Markers render as `_normalize_to_square(logo)` + colored rectangle outline drawn around the logo's alpha bbox; logo pixels are never modified, only framed.
 
 ---
 

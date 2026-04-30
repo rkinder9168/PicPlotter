@@ -5,7 +5,7 @@
 **Project**: PicPlotter Auto (Web/Drive edition)
 **Repo**: `PicPlotter_web_claude`
 **Purpose**: Auto-plot geotagged photos on Google satellite imagery and export KMZ/HTML. Supports Google Drive folder import with URL-referenced web deployments.
-**Status**: Feature complete, v3.1.0
+**Status**: Feature complete, v3.2.0
 **Related Docs**: [PLANNING.md](./PLANNING.md) | [TASKS.md](./TASKS.md)
 
 ---
@@ -49,6 +49,7 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 - **KMZ and HTML exports** - deliver to Google Earth Pro or clients
 - **Deploy to Web** - Netlify deployment with shareable link
 - **Project memory** - save/load project settings (name, client, address, etc.) for reuse
+- **Custom branding** - global logo upload (JPG/PNG) + company info ("Prepared by" block in HTML deliverables); logo serves as the photo marker base, group identity comes from a colored rectangular outline
 - **Single executable** - one .exe to distribute
 
 ---
@@ -66,13 +67,14 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 │   ├── kmz_generator.py        # KML/KMZ generation with embedded images
 │   ├── html_map_generator.py   # HTML map export with interactive markers
 │   ├── google_drive.py         # Google Drive API client (folder listing, URLs, download)
-│   ├── marker_utils.py         # Marker colorization (NumPy vectorized)
+│   ├── marker_utils.py         # Logo normalization + colored rectangle outline (PIL)
 │   ├── photo_groups.py         # Photo group management
 │   ├── coordinate_transform.py # PixelPoint and AffineTransform helpers
 │   ├── netlify_deployer.py     # Netlify deployment for web sharing
 │   └── utils.py                # File/folder utilities
 ├── assets/
-│   ├── marker_outlined_transparent.png
+│   ├── marker_outlined_transparent.png  # Bundled fallback marker base
+│   ├── everline-horizontal-logo.jpg     # Bundled fallback header logo
 │   └── app.html
 ├── build/
 │   └── build.py                # Cross-platform PyInstaller build script
@@ -111,6 +113,7 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 ### `src/config.py`
 - Saves/loads Google API keys and Netlify tokens from `~/.picplotter_auto/config.json`
 - Project management: `list_projects()`, `save_project()`, `load_project()`, `delete_project()` — stores projects as JSON in `~/.picplotter_auto/projects/`
+- Branding (global, not per-project): `get/set_user_logo*` (PIL-validated, normalized to PNG ≤ 512px long-edge at `~/.picplotter_auto/logo.png`), `get/set_company_info` with website normalization
 - Environment variable fallback (`GOOGLE_MAPS_API_KEY`)
 - Centralized constants (TILE_SIZE, EXPORT_MAX_DIM, etc.)
 - Shared `get_asset_path()` for PyInstaller compatibility
@@ -123,15 +126,23 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 ### `src/html_map_generator.py`
 - Generates interactive HTML maps with aerial background and photo markers
 - Supports both base64-embedded photos (`image_data`) and URL-referenced photos (`image_url`)
+- Renders the user's logo in the sidebar header and an optional "Prepared by" block (`company_name`, `company_address`, `company_phone`, `company_website`) alongside the existing client info
+- Marker numbers render as a small white badge in the lower-right corner of each marker so they remain readable against any logo
+
+### `src/marker_utils.py`
+- Loads the marker base image — prefers the user-uploaded logo, falls back to the bundled `marker_outlined_transparent.png`
+- `_normalize_to_square()` centers the logo on a transparent square canvas with margin (controlled by `LOGO_CONTENT_RATIO`) so the group rectangle has room to draw
+- `colorize_marker()` draws a colored rectangular outline around the logo's alpha bbox — group identity comes from the rectangle color, not from tinting the logo. Default group uses a black rectangle.
+- `MarkerColorizer` caches colored variants; `reset_colorizer()` invalidates the cache after a logo change
 
 ---
 
 ## Dependencies
 
 ```
-pillow>=10.0.0       # Image processing
+pillow>=10.0.0       # Image processing (and PIL.ImageDraw for marker outlines)
 pillow-heif>=0.16.0  # HEIC/HEIF support
-numpy>=1.20.0        # Vectorized marker colorization
+numpy>=1.20.0        # Listed in requirements.txt; not currently imported by src/* — kept as a transitive safety net for Pillow / PyInstaller
 pywebview>=4.0       # Embedded map editor
 pyinstaller>=6.0     # Executable creation (build only)
 ```

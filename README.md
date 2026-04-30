@@ -23,6 +23,7 @@ Auto-plot Google satellite imagery from your geotagged photos, then export KMZ o
 - **KMZ and HTML outputs** - Google Earth Pro and client-ready HTML
 - **Deploy to Web** - instantly deploy interactive maps to Netlify and share a link with clients
 - **Project memory** - save and reload project settings (name, client, address, etc.) so you don't have to retype
+- **Custom branding** - upload your own logo (JPG/PNG) and enter company contact info; logo appears as photo markers and in the HTML deliverable's "Prepared by" block
 - **Modern dark UI** - single-window experience
 - **Supports HEIC and JPG** - works with iPhone and Android photos
 
@@ -106,6 +107,25 @@ Save your project settings so you can come back and edit later without retyping.
 4. To remove a saved project, select it and click **Delete**
 
 Projects are stored locally at `~/.picplotter_auto/projects/`.
+
+## Branding (Logo + Company Info)
+
+Customize PicPlotter with your own logo and company contact info. These settings are global — set once and used across every project.
+
+1. In **Options → Settings**, scroll to the **Company Logo** section
+2. Click **Upload Logo** and pick a JPG or PNG (logo is auto-resized to 512px and saved to `~/.picplotter_auto/logo.png`)
+3. Fill in **Company Name**, **Company Address**, **Phone Number**, and (optionally) **Company Website** — values save automatically when you click out of each field
+4. Click **Reset to Default** any time to revert to the bundled fallback
+
+Where the branding shows up:
+- **Photo markers** — each pin uses your logo with a colored rectangular outline that identifies the photo group. The logo's own colors are preserved; only the outline color changes per group. Default group uses a black outline.
+- **Marker numbers** — sit in a small white badge in the lower-right of each marker so they remain readable against any logo.
+- **HTML deliverable sidebar** — your logo replaces the default header logo, and a **Prepared by** block renders below the client info with your company name, address, phone, and website (rendered as a clickable link).
+
+Tips:
+- Best results: high-contrast, mostly single-color logos on a white or transparent background.
+- Logo changes apply to new exports and the next time the map editor is opened.
+- Website URLs without `http://` or `https://` get `https://` prepended automatically.
 
 ## Deploy to Web (Netlify)
 

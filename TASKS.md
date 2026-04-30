@@ -4,7 +4,7 @@
 
 ---
 
-## Project Status: v3.1.0 - Feature Complete
+## Project Status: v3.2.0 - Feature Complete
 
 All planned features implemented. Windows and macOS builds available via GitHub Actions.
 
@@ -63,6 +63,14 @@ All planned features implemented. Windows and macOS builds available via GitHub 
 - [x] `assets/app.html` — JS functions to populate dropdown, save/load/delete projects
 - [x] Saves: project name, proposal link, client name, company, address, quality, output folder, Drive folder URL
 
+### Phase 14: User-Configurable Branding (v3.2.0)
+- [x] `src/config.py` — `get/set_user_logo_from_bytes` (PIL-validated, JPG/PNG only, normalized to PNG ≤ 512px long-edge at `~/.picplotter_auto/logo.png`), `clear_user_logo`, `get/set_company_info` with website normalization (`_normalize_website` auto-prepends `https://`)
+- [x] `src/marker_utils.py` — `_load_base_image()` prefers user logo, both user logo and EverLine fallback go through `_normalize_to_square()` with `LOGO_CONTENT_RATIO` margin; `colorize_marker()` rewritten to draw a colored rectangular outline around the logo's alpha bbox (default group = black rectangle); `reset_colorizer()` for cache invalidation; NumPy import dropped
+- [x] `src/html_map_generator.py` — dropped hardcoded `LOGO_FILENAME`; `_get_logo_image_src()` prefers user logo; new `company_*` kwargs and `_build_prepared_by_html()` helper; CSS for `#prepared-by` block; `.marker-number` repositioned to lower-right with white badge background; obsolete black-group `.marker-number` color rule removed
+- [x] `src/main.py` — pywebview API: `get_branding`, `select_and_save_logo` (with inline `{ok, error}` returns for non-image / HEIC / corrupted uploads), `clear_logo`, `save_company_info`; threaded `**get_company_info()` into all four `HTMLMapGenerator(...)` call sites
+- [x] `assets/app.html` — Branding section in Options → Settings: logo upload row with preview + reset, four company info inputs that auto-save on blur; CSS for marker badge in lower-right corner; obsolete `computeLabelOffset` and black-group green-text JS removed
+- [x] Verified end-to-end: backwards compat (no branding configured), JPG/PNG/wide/tall/oversized uploads, invalid file errors, website normalization, logo center pixels preserved (no tinting), default + black + colored group rectangles
+
 ### Phase 12: Build & CI Setup
 - [x] `build/build.py` with `src.google_drive` hidden import
 - [x] `PicPlotter.spec` updated for new repo path + google_drive module
@@ -104,11 +112,32 @@ Before distribution, verify:
 - [ ] Missing API key -> "Please set your API key" error
 - [ ] Drive API not enabled -> clear setup instructions in error
 
+### Branding (Phase 14)
+- [ ] Default state with no logo uploaded -> EverLine swoosh + horizontal logo still appear; no "Prepared by" block in exports
+- [ ] PNG upload (square, wide, tall) -> logo previews instantly; markers in editor and HTML use the new logo with colored rectangle outline
+- [ ] JPG upload -> converted to PNG, white-background logos still readable
+- [ ] Oversized upload (> 512px) -> auto-downscaled to ≤ 512px long-edge
+- [ ] Invalid uploads (HEIC, .txt, corrupted) -> inline "Logo must be JPG or PNG" error, no crash
+- [ ] Company info (all four fields) -> "Prepared by" block renders in HTML with clickable website link
+- [ ] Company info with no logo uploaded -> "Prepared by" block still renders (text only)
+- [ ] Website normalization: blank, `example.com`, `https://x.com`, `http://x.com`, `not a url`
+- [ ] Reset to Default -> EverLine assets return; `~/.picplotter_auto/logo.png` deleted
+- [ ] Persistence: close + reopen app, branding reloads
+- [ ] KMZ markers unchanged (still red dot - explicit out-of-scope)
+- [ ] Marker number badges visible against any logo background
+
 ---
 
 ## Version History
 
-### v3.1.0 (Current)
+### v3.2.0 (Current)
+- User-configurable branding: upload custom logo (JPG/PNG) and company contact info; settings stored globally at `~/.picplotter_auto/logo.png` and `config.json`
+- Markers re-engineered: logo pixels are preserved unchanged; group identity comes from a colored rectangular outline drawn around the logo (default group = black rectangle)
+- Marker numbers moved to a small white badge in the lower-right corner so they remain readable against any logo
+- New "Prepared by" block in HTML deliverables with company name, address, phone, and clickable website link
+- NumPy dependency no longer used by `src/*` (kept in requirements.txt as a transitive safety net)
+
+### v3.1.0
 - Project memory: save/load project settings (name, client, address, etc.)
 - Projects stored as JSON in `~/.picplotter_auto/projects/`
 
