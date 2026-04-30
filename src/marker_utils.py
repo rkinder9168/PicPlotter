@@ -9,7 +9,6 @@ import io
 import colorsys
 from typing import Dict, Optional, Tuple
 
-import numpy as np
 from PIL import Image, ImageDraw
 
 from src.config import get_asset_path, get_user_logo_path
@@ -41,13 +40,20 @@ def hsl_to_rgb(h: float, s: float, l: float) -> Tuple[int, int, int]:
     return int(r * 255), int(g * 255), int(b * 255)
 
 
-def _normalize_to_square(image: Image.Image, size: int) -> Image.Image:
+LOGO_CONTENT_RATIO = 0.82
+
+
+def _normalize_to_square(
+    image: Image.Image,
+    size: int,
+    content_ratio: float = LOGO_CONTENT_RATIO,
+) -> Image.Image:
     """
     Center the image on a transparent square canvas of the given size.
 
-    Longer edge is scaled to `size`, aspect ratio is preserved. Used when
-    a user-supplied logo (which may be wide or tall) becomes the marker
-    base — guarantees a consistent square footprint downstream.
+    Longer edge is scaled to `content_ratio * size` (leaving margin for the
+    group-color rectangle outline drawn in colorize_marker). Aspect ratio
+    is preserved.
     """
     if image.mode != "RGBA":
         image = image.convert("RGBA")
@@ -55,7 +61,8 @@ def _normalize_to_square(image: Image.Image, size: int) -> Image.Image:
     if w == 0 or h == 0:
         return Image.new("RGBA", (size, size), (0, 0, 0, 0))
     long_edge = max(w, h)
-    scale = size / long_edge
+    target = max(1, int(size * content_ratio))
+    scale = target / long_edge
     new_w = max(1, int(round(w * scale)))
     new_h = max(1, int(round(h * scale)))
     resized = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
@@ -70,63 +77,59 @@ def colorize_marker(
     source_color: str = "#2A9D6E",
 ) -> Image.Image:
     """
-    Colorize a marker image with a solid color for all stripes.
+    Draw a colored rectangular outline around the marker's content area.
 
-    All colored stripes become the exact same target color (completely solid).
-    White outlines are preserved. For black markers, the number becomes green.
-
-    Uses NumPy vectorized operations for 10-50x faster processing compared
-    to pixel-by-pixel Python loops.
+    The logo's pixels are preserved unchanged — group identity comes from
+    the rectangle color, not from tinting the logo. The rectangle hugs the
+    logo's alpha bounding box with a small inset for breathing room.
+    'default' uses a black rectangle.
 
     Args:
-        marker_image: PIL Image in RGBA mode
-        target_color: Hex color for all stripes (e.g., "#F6D11A") or "default"
-        source_color: Hex color of the original marker (unused, kept for compatibility)
+        marker_image: PIL Image in RGBA mode (logo on transparent canvas)
+        target_color: Hex color for the rectangle (e.g., "#F6D11A") or "default"
+        source_color: Unused, kept for backwards compatibility
 
     Returns:
-        New PIL Image with solid colored stripes
+        New PIL Image: original logo + colored rectangle outline
     """
+    _ = source_color
     if marker_image.mode != "RGBA":
         marker_image = marker_image.convert("RGBA")
 
     if target_color.lower() == "default":
-        return marker_image.copy()
+        rect_rgb = (0, 0, 0)
+    else:
+        rect_rgb = hex_to_rgb(target_color)
 
-    target_rgb = hex_to_rgb(target_color)
-    is_black_group = target_color.lower() == "#2a2a2a"
-    green_rgb = hex_to_rgb("#2A9D6E")
+    result = marker_image.copy()
 
-    # Convert to NumPy array for vectorized operations
-    arr = np.array(marker_image, dtype=np.uint8)
-    r, g, b, a = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2], arr[:, :, 3]
+    bbox = result.getbbox()
+    if bbox is None:
+        # No visible content (e.g., empty logo) — frame the whole canvas
+        bbox = (0, 0, result.size[0] - 1, result.size[1] - 1)
 
-    # Calculate brightness and max channel using vectorized operations
-    brightness = (r.astype(np.float32) + g.astype(np.float32) + b.astype(np.float32)) / 3.0
-    max_channel = np.maximum(np.maximum(r, g), b)
+    canvas_w, canvas_h = result.size
+    canvas_size = max(canvas_w, canvas_h)
+    inset = max(8, canvas_size // 32)
+    stroke = max(10, canvas_size // 20)
 
-    # Create masks for different pixel categories
-    visible = a > 0
-    not_white = brightness <= 240
-    not_black = max_channel >= 20
-    is_black_pixel = max_channel < 20
+    # Expand bbox outward by inset, clamped to canvas. PIL strokes are
+    # centered on the rectangle line, so half the stroke also extends
+    # inward — pull the rectangle in by stroke // 2 from each edge to
+    # ensure the full outline stays within the canvas.
+    half_stroke = stroke // 2
+    x0 = max(half_stroke, bbox[0] - inset)
+    y0 = max(half_stroke, bbox[1] - inset)
+    x1 = min(canvas_w - 1 - half_stroke, bbox[2] + inset)
+    y1 = min(canvas_h - 1 - half_stroke, bbox[3] + inset)
 
-    # Mask for pixels that should get the target color
-    # (visible, not white, not black)
-    colorize_mask = visible & not_white & not_black
+    if x1 <= x0 or y1 <= y0:
+        return result
 
-    # Apply target color to matching pixels
-    arr[colorize_mask, 0] = target_rgb[0]
-    arr[colorize_mask, 1] = target_rgb[1]
-    arr[colorize_mask, 2] = target_rgb[2]
+    draw = ImageDraw.Draw(result)
+    draw.rectangle([x0, y0, x1, y1], outline=rect_rgb + (255,), width=stroke)
 
-    # For black group markers, colorize black pixels with green
-    if is_black_group:
-        black_colorize_mask = visible & not_white & is_black_pixel
-        arr[black_colorize_mask, 0] = green_rgb[0]
-        arr[black_colorize_mask, 1] = green_rgb[1]
-        arr[black_colorize_mask, 2] = green_rgb[2]
-
-    return Image.fromarray(arr, mode="RGBA")
+    return result
 
 
 def create_fallback_marker(
@@ -177,16 +180,20 @@ class MarkerColorizer:
     def _load_base_image(self) -> None:
         """Load the base marker image, preferring user-uploaded logo over bundled default."""
         user_logo = get_user_logo_path()
+        source_path = None
         if user_logo is not None and user_logo.exists():
-            raw = Image.open(user_logo).convert("RGBA")
-            self._base_image = _normalize_to_square(raw, MARKER_BASE_SIZE)
+            source_path = user_logo
+        else:
+            marker_path = get_asset_path("marker_outlined_transparent.png")
+            if marker_path.exists():
+                source_path = marker_path
+
+        if source_path is None:
+            self._base_image = None
             return
 
-        marker_path = get_asset_path("marker_outlined_transparent.png")
-        if marker_path.exists():
-            self._base_image = Image.open(marker_path).convert("RGBA")
-        else:
-            self._base_image = None
+        raw = Image.open(source_path).convert("RGBA")
+        self._base_image = _normalize_to_square(raw, MARKER_BASE_SIZE)
 
     def reset(self) -> None:
         """Clear cache and reload base image (call after logo upload/clear)."""

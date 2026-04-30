@@ -733,10 +733,6 @@ class HTMLMapGenerator:
             marker_color_css.append(
                 f".marker-color-{color_class} {{ background-image: url('data:image/png;base64,{b64}'); }}"
             )
-            if color_class == "2a2a2a":
-                marker_color_css.append(
-                    f".marker-color-{color_class} .marker-number {{ color: #2A9D6E !important; }}"
-                )
         marker_color_styles = "\n        ".join(marker_color_css)
 
         if has_marker_images:
