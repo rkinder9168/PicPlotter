@@ -51,6 +51,32 @@ COMPANY_WEBSITE_FIELD = "company_website"
 
 
 # =============================================================================
+# SSL Context (HTTPS for urllib)
+# =============================================================================
+
+_ssl_context = None
+
+
+def get_ssl_context():
+    """Return a cached SSL context backed by certifi when available.
+
+    PyInstaller .app bundles on macOS don't have access to the system trust
+    store, so urllib's default context fails CERTIFICATE_VERIFY_FAILED. Using
+    certifi's CA bundle works in both bundled and from-source runs.
+    """
+    global _ssl_context
+    if _ssl_context is not None:
+        return _ssl_context
+    import ssl
+    try:
+        import certifi
+        _ssl_context = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        _ssl_context = ssl.create_default_context()
+    return _ssl_context
+
+
+# =============================================================================
 # Asset Path Helper
 # =============================================================================
 

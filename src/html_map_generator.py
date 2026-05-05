@@ -31,13 +31,10 @@ def get_window_icon_path() -> Optional[str]:
     if ico_asset.exists():
         return str(ico_asset)
 
-    png_path = get_asset_path("marker_ev.png")
+    png_path = get_asset_path("marker_pin.png")
     if sys.platform != "win32":
         return str(png_path) if png_path.exists() else None
 
-    ico_path = get_asset_path("marker_ev.ico")
-    if ico_path.exists():
-        return str(ico_path)
     if not png_path.exists():
         return None
 
@@ -48,7 +45,7 @@ def get_window_icon_path() -> Optional[str]:
             square = Image.new("RGBA", (max_side, max_side), (0, 0, 0, 0))
             offset = ((max_side - img.size[0]) // 2, (max_side - img.size[1]) // 2)
             square.paste(img, offset)
-            tmp_ico = Path(tempfile.gettempdir()) / "picplotter_marker_ev.ico"
+            tmp_ico = Path(tempfile.gettempdir()) / "picplotter_marker_pin.ico"
             if not tmp_ico.exists():
                 sizes = [
                     (16, 16),

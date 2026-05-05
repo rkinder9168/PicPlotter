@@ -4,19 +4,17 @@ import sys
 
 WSL_PROJECT = '\\\\wsl$\\Ubuntu\\home\\rkinder9168\\projects\\PicPlotter_web_claude'
 
-ICON_PATH = f'{WSL_PROJECT}\\assets\\favicon_everline1.ico'
+ICON_PATH = f'{WSL_PROJECT}\\assets\\icon.ico'
 ICON_ARG = ICON_PATH if os.path.exists(ICON_PATH) else None
 
 datas = [
     # Include all assets (marker icons)
     (f'{WSL_PROJECT}\\assets\\marker_outlined_transparent.png', 'assets'),
-    (f'{WSL_PROJECT}\\assets\\marker_ev.png', 'assets'),
+    (f'{WSL_PROJECT}\\assets\\marker_pin.png', 'assets'),
     (f'{WSL_PROJECT}\\assets\\everline-horizontal-logo.jpg', 'assets'),
-    (f'{WSL_PROJECT}\\assets\\favicon_everline1.ico', 'assets'),
+    (f'{WSL_PROJECT}\\assets\\icon.ico', 'assets'),
     (f'{WSL_PROJECT}\\assets\\app.html', 'assets'),
 ]
-if os.path.exists(ICON_PATH):
-    datas.append((ICON_PATH, 'assets'))
 
 a = Analysis(
     [f'{WSL_PROJECT}\\src\\main.py'],
@@ -28,6 +26,7 @@ a = Analysis(
         'PIL',
         'PIL.Image',
         'PIL.ExifTags',
+        'certifi',
         'webview',
         'src',
         'src.exif_extractor',

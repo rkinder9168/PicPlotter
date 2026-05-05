@@ -2,6 +2,7 @@
 pillow>=10.0.0          # Image processing
 pillow-heif>=0.16.0     # HEIC/HEIF support
 numpy>=1.20.0           # Affine transformation math for HTML map export
+certifi>=2024.2.2       # CA bundle for HTTPS in PyInstaller bundles (macOS has no system trust store available to bundled Python)
 pyinstaller>=6.0        # Build executable
 pywebview>=4.0          # Single-window webview UI
 pythonnet>=3.0; sys_platform == "win32"  # Required for pywebview on Windows

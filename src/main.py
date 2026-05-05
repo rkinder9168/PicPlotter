@@ -35,6 +35,7 @@ from src.config import (
     EXPORT_MAX_DIM,
     TILE_SIZE,
     get_asset_path,
+    get_ssl_context,
     get_google_maps_api_key,
     set_google_maps_api_key,
     get_netlify_token,
@@ -294,7 +295,7 @@ class AppApi:
             }).encode()
             req = Request("https://oauth2.googleapis.com/token", data=data, method="POST")
             req.add_header("Content-Type", "application/x-www-form-urlencoded")
-            with urlopen(req, timeout=10) as resp:
+            with urlopen(req, timeout=10, context=get_ssl_context()) as resp:
                 result = json.loads(resp.read().decode())
             access_token = result.get("access_token")
             if access_token:
@@ -397,7 +398,7 @@ class AppApi:
             }).encode()
             req = Request("https://oauth2.googleapis.com/token", data=exchange_data, method="POST")
             req.add_header("Content-Type", "application/x-www-form-urlencoded")
-            with urlopen(req, timeout=15) as resp:
+            with urlopen(req, timeout=15, context=get_ssl_context()) as resp:
                 tokens = json.loads(resp.read().decode())
         except Exception as exc:
             return {"status": "error", "message": f"Token exchange failed: {exc}"}
@@ -2069,7 +2070,7 @@ def _fetch_tile_image(x: int, y: int, z: int, api_key: str) -> Optional[Image.Im
         url = TILE_URL.format(host=host, x=x, y=y, z=z)
         url = f"{url}{key_param}"
         try:
-            with urlopen(Request(url, headers=headers), timeout=10) as response:
+            with urlopen(Request(url, headers=headers), timeout=10, context=get_ssl_context()) as response:
                 data = response.read()
             image = Image.open(io.BytesIO(data))
             return image.convert("RGB")

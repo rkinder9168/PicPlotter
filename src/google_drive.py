@@ -16,6 +16,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
+from src.config import get_ssl_context
+
 
 class DriveFileInfo(NamedTuple):
     """Metadata for a file in a Google Drive folder."""
@@ -102,7 +104,7 @@ def _drive_request(
     req = Request(full_url)
     for k, v in headers.items():
         req.add_header(k, v)
-    with urlopen(req, timeout=30) as resp:
+    with urlopen(req, timeout=30, context=get_ssl_context()) as resp:
         return resp.read()
 
 

@@ -73,6 +73,9 @@ def build_executable():
         "--hidden-import=PIL",
         "--hidden-import=PIL.Image",
         "--hidden-import=PIL.ExifTags",
+        # CA bundle for HTTPS (Netlify, Google Drive, oauth, map tiles)
+        "--hidden-import=certifi",
+        "--collect-data=certifi",
         # Hidden imports for pywebview
         "--hidden-import=webview",
         # Hidden imports for src modules
@@ -101,32 +104,30 @@ def build_executable():
         if mac_icon.exists():
             icon_path = mac_icon
     if icon_path is None:
-        icon_path = PROJECT_ROOT / "assets" / "favicon_everline1.ico"
+        icon_path = PROJECT_ROOT / "assets" / "icon.ico"
         if not icon_path.exists():
-            icon_path = PROJECT_ROOT / "assets" / "icon.ico"
-            if not icon_path.exists():
-                marker_icon = PROJECT_ROOT / "assets" / "marker_ev.png"
-                if marker_icon.exists():
-                    try:
-                        from PIL import Image
-                        with Image.open(marker_icon) as img:
-                            img = img.convert("RGBA")
-                            max_side = max(img.size)
-                            square = Image.new("RGBA", (max_side, max_side), (0, 0, 0, 0))
-                            offset = ((max_side - img.size[0]) // 2, (max_side - img.size[1]) // 2)
-                            square.paste(img, offset)
-                            sizes = [
-                                (16, 16),
-                                (24, 24),
-                                (32, 32),
-                                (48, 48),
-                                (64, 64),
-                                (128, 128),
-                                (256, 256),
-                            ]
-                            square.save(icon_path, format="ICO", sizes=sizes)
-                    except Exception as exc:
-                        print(f"Warning: unable to generate icon.ico: {exc}")
+            marker_icon = PROJECT_ROOT / "assets" / "marker_pin.png"
+            if marker_icon.exists():
+                try:
+                    from PIL import Image
+                    with Image.open(marker_icon) as img:
+                        img = img.convert("RGBA")
+                        max_side = max(img.size)
+                        square = Image.new("RGBA", (max_side, max_side), (0, 0, 0, 0))
+                        offset = ((max_side - img.size[0]) // 2, (max_side - img.size[1]) // 2)
+                        square.paste(img, offset)
+                        sizes = [
+                            (16, 16),
+                            (24, 24),
+                            (32, 32),
+                            (48, 48),
+                            (64, 64),
+                            (128, 128),
+                            (256, 256),
+                        ]
+                        square.save(icon_path, format="ICO", sizes=sizes)
+                except Exception as exc:
+                    print(f"Warning: unable to generate icon.ico: {exc}")
     if icon_path and icon_path.exists():
         args.append(f"--icon={icon_path}")
 
@@ -134,9 +135,8 @@ def build_executable():
     sep = ";" if PLATFORM == "Windows" else ":"
     asset_files = [
         PROJECT_ROOT / "assets" / "marker_outlined_transparent.png",
-        PROJECT_ROOT / "assets" / "marker_ev.png",
+        PROJECT_ROOT / "assets" / "marker_pin.png",
         PROJECT_ROOT / "assets" / "everline-horizontal-logo.jpg",
-        PROJECT_ROOT / "assets" / "favicon_everline1.ico",
         PROJECT_ROOT / "assets" / "icon.ico",
         PROJECT_ROOT / "assets" / "icon.icns",
         PROJECT_ROOT / "assets" / "app.html",

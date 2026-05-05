@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from typing import Optional
 from uuid import uuid4
 
+from src.config import get_ssl_context
+
 
 @dataclass
 class DeployResult:
@@ -179,7 +181,7 @@ class NetlifyDeployer:
             headers=headers,
             method="PUT",
         )
-        with urllib.request.urlopen(request, timeout=120) as _resp:
+        with urllib.request.urlopen(request, timeout=120, context=get_ssl_context()) as _resp:
             pass
 
     def _api_request(self, method: str, path: str, body: Optional[dict] = None) -> dict:
@@ -193,7 +195,7 @@ class NetlifyDeployer:
         data = json.dumps(body).encode("utf-8") if body else None
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
 
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=30, context=get_ssl_context()) as response:
             raw = response.read().decode("utf-8")
             if not raw:
                 return {}
@@ -217,7 +219,7 @@ def verify_token(token: str) -> tuple[bool, str]:
 
     try:
         request = urllib.request.Request(url, headers=headers, method="GET")
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=30, context=get_ssl_context()) as response:
             result = json.loads(response.read().decode("utf-8"))
             full_name = result.get("full_name") or result.get("email") or "Unknown"
             return True, f"Connected as: {full_name}"
@@ -229,8 +231,14 @@ def verify_token(token: str) -> tuple[bool, str]:
             return False, "Token lacks required permissions"
         return False, f"Verification failed: {e.code}"
 
-    except urllib.error.URLError:
-        return False, "No internet connection"
+    except urllib.error.URLError as e:
+        reason = getattr(e, "reason", e)
+        reason_text = str(reason) or repr(reason)
+        if "CERTIFICATE_VERIFY_FAILED" in reason_text or "SSL" in reason_text.upper():
+            return False, f"SSL certificate verification failed (try installing certifi): {reason_text}"
+        if "timed out" in reason_text.lower():
+            return False, "Connection to api.netlify.com timed out"
+        return False, f"Could not reach api.netlify.com: {reason_text}"
 
     except Exception as e:
-        return False, f"Error: {str(e)}"
+        return False, f"Error: {type(e).__name__}: {e}"
