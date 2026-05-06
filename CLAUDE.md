@@ -5,8 +5,8 @@
 **Project**: PicPlotter Auto (Web/Drive edition)
 **Repo**: `PicPlotter_web_claude`
 **Purpose**: Auto-plot geotagged photos on Google satellite imagery and export KMZ/HTML. Supports Google Drive folder import with URL-referenced web deployments.
-**Status**: Feature complete, v3.2.0
-**Related Docs**: [PLANNING.md](./PLANNING.md) | [TASKS.md](./TASKS.md)
+**Status**: Feature complete, v3.2.0 + Page mode (merged to main, unreleased)
+**Related Docs**: [PLANNING.md](./PLANNING.md) | [TASKS.md](./TASKS.md) | [docs/page-mode-feature-plan.md](./docs/page-mode-feature-plan.md)
 
 ---
 
@@ -50,6 +50,7 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 - **Deploy to Web** - Netlify deployment with shareable link
 - **Project memory** - save/load project settings (name, client, address, etc.) for reuse
 - **Custom branding** - global logo upload (JPG/PNG) + company info ("Prepared by" block in HTML deliverables); logo serves as the photo marker base, group identity comes from a colored rectangular outline
+- **Page mode** - alternative to colored groups: organize photos into named pages, each with its own background/view/rotation/placements; exports a multi-page interactive HTML with page navigation and per-page legend
 - **Single executable** - one .exe to distribute
 
 ---
@@ -67,11 +68,15 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 │   ├── kmz_generator.py        # KML/KMZ generation with embedded images
 │   ├── html_map_generator.py   # HTML map export with interactive markers
 │   ├── google_drive.py         # Google Drive API client (folder listing, URLs, download)
-│   ├── marker_utils.py         # Logo normalization + colored rectangle outline (PIL)
-│   ├── photo_groups.py         # Photo group management
+│   ├── marker_utils.py         # Logo normalization + colored rectangle outline (PIL); plain marker variant for Page mode
+│   ├── photo_groups.py         # Photo group management (Group mode)
+│   ├── photo_pages.py          # Photo page assignments + per-page editor state (Page mode)
 │   ├── coordinate_transform.py # PixelPoint and AffineTransform helpers
 │   ├── netlify_deployer.py     # Netlify deployment for web sharing
 │   └── utils.py                # File/folder utilities
+├── tests/                      # Unit tests (photo_pages, multi-page HTML, backend page state)
+├── docs/
+│   └── page-mode-feature-plan.md
 ├── assets/
 │   ├── marker_outlined_transparent.png  # Bundled fallback marker base
 │   ├── everline-horizontal-logo.jpg     # Bundled fallback header logo
@@ -101,6 +106,8 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 - Handles KMZ and HTML export using saved marker overrides
 - Web deploy uses Drive image URLs (no download) when all photos are from Drive
 - Parallel photo processing with ThreadPoolExecutor
+- `AppState.assignment_mode` (`"group"` | `"page"`) and `page_assignments`; pywebview API for Page mode: `set_assignment_mode`, `get_assignment_state`, `add_page`, `delete_page`, `rename_page`, `assign_photo_page`, `select_page_custom_map_image`
+- `_serialize_page_state()` and `_sync_page_assignments()` keep frontend state in sync; per-page editor state persists in `map_overrides.json` and saved projects with backward-compatible defaults
 
 ### `src/google_drive.py`
 - Google Drive API v3 client using stdlib `urllib` (no extra dependencies)
@@ -128,12 +135,19 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 - Supports both base64-embedded photos (`image_data`) and URL-referenced photos (`image_url`)
 - Renders the user's logo in the sidebar header and an optional "Prepared by" block (`company_name`, `company_address`, `company_phone`, `company_website`) alongside the existing client info
 - Marker numbers render as a small white badge in the lower-right corner of each marker so they remain readable against any logo
+- `generate_multi_page_html()` builds a single self-contained multi-page deliverable for Page mode: ordered `pages[]` payload (id, name, background, dimensions, photos, marker pixels, legend); deliverable JS swaps background, markers, lightbox scope, and legend on page change
 
 ### `src/marker_utils.py`
 - Loads the marker base image — prefers the user-uploaded logo, falls back to the bundled `marker_outlined_transparent.png`
 - `_normalize_to_square()` centers the logo on a transparent square canvas with margin (controlled by `LOGO_CONTENT_RATIO`) so the group rectangle has room to draw
 - `colorize_marker()` draws a colored rectangular outline around the logo's alpha bbox — group identity comes from the rectangle color, not from tinting the logo. Default group uses a black rectangle.
 - `MarkerColorizer` caches colored variants; `reset_colorizer()` invalidates the cache after a logo change
+- `get_plain_marker_bytes()` returns the user's logo without the colored rectangle outline — used by the multi-page generator since Page mode has no per-group color
+
+### `src/photo_pages.py`
+- `PhotoPage` — id, display name, assigned photo paths, per-page `PageEditorState`, and a `locked` flag (true only for Page 1)
+- `PageEditorState` — `map_source` (`tiles` or `custom`), `gps_overrides`, `custom_map_path`, `custom_marker_overrides`, `custom_autoplot_enabled`, `heading`, `custom_heading`, `tile_view`, `custom_view`. Each page is independently calibratable and rotatable.
+- `PageAssignments` — owns the page dict; `assign_photo`, `unassign_photo`, `add_page`, `remove_page` (reassigns photos to Page 1), `rename_page`, `prune_to_photos`, `auto_assign_unassigned`, `clear_all`. Page 1 is the locked default and cannot be deleted.
 
 ---
 

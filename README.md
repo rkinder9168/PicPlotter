@@ -24,6 +24,7 @@ Auto-plot Google satellite imagery from your geotagged photos, then export KMZ o
 - **Deploy to Web** - instantly deploy interactive maps to Netlify and share a link with clients
 - **Project memory** - save and reload project settings (name, client, address, etc.) so you don't have to retype
 - **Custom branding** - upload your own logo (JPG/PNG) and enter company contact info; logo appears as photo markers and in the HTML deliverable's "Prepared by" block
+- **Page mode** - organize photos into named deliverable pages; each page owns its own background, view, rotation, and placements, and exports a multi-page interactive HTML with page navigation and per-page legend
 - **Modern dark UI** - single-window experience
 - **Supports HEIC and JPG** - works with iPhone and Android photos
 
@@ -107,6 +108,18 @@ Save your project settings so you can come back and edit later without retyping.
 4. To remove a saved project, select it and click **Delete**
 
 Projects are stored locally at `~/.picplotter_auto/projects/`.
+
+## Page Mode
+
+Switch from grouping by color to organizing photos into named pages — useful when a deliverable has multiple maps (e.g. one per site or per zone).
+
+1. In the Groups panel, toggle **Group | Page** to **Page**
+2. Add, rename, or delete pages from the Pages panel (Page 1 is locked as the default and receives photos from any deleted page)
+3. Assign photos to pages from the file list
+4. Open the map editor — a page selector appears in the sidebar. Each page has its own background (Auto satellite or Custom image), view, rotation, and marker placements
+5. Export the HTML — the deliverable is a single multi-page interactive file with page navigation and a per-page legend
+
+Group mode and Page mode data are preserved independently; switching modes does not delete the inactive mode's state. Page mode markers use your standard logo without a colored outline. KMZ export remains group/placement based.
 
 ## Branding (Logo + Company Info)
 

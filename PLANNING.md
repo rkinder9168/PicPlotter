@@ -31,6 +31,16 @@ This complexity made the app impractical for general public distribution.
 - Local HTML and KMZ exports remain self-contained (download photos automatically)
 - No new Python dependencies (uses stdlib `urllib`)
 
+### v3.3 - Page Mode
+- Photos can be organized into named deliverable pages instead of (or alongside) colored groups
+- New `assignment_mode: "group" | "page"` toggle in the UI; inactive mode's data is preserved, only the active mode drives the editor and exports
+- Each page owns its own editor state: map source (`tiles` or `custom`), GPS overrides, custom image + calibration, headings, and tile/custom view
+- Page 1 is the locked default; deleting any other page reassigns its photos to Page 1
+- Page mode markers use the user's logo with no colored outline (group identity doesn't apply)
+- New multi-page HTML deliverable with page navigation, per-page background, and a legend scoped to the active page
+- KMZ export remains group/placement based and is not multi-page
+- New `src/photo_pages.py` module owns `PhotoPage`, `PageEditorState`, and `PageAssignments`
+
 ### v3.2 - User-Configurable Branding
 - Replace hardcoded EverLine branding with global, user-configurable assets
 - Logo upload (JPG/PNG, normalized to ≤ 512px PNG) becomes the photo marker base AND the HTML sidebar header logo
@@ -194,6 +204,20 @@ Branding is intentionally global rather than per-project — the typical user is
 
 ---
 
+## Page Mode Architecture
+
+Page mode is implemented in `src/photo_pages.py` and integrated through `src/main.py` and `src/html_map_generator.py`:
+
+- `PhotoPage` — id, display name, assigned photo paths, per-page `PageEditorState`, and a `locked` flag (true only for Page 1)
+- `PageEditorState` — `map_source` (`tiles` or `custom`), `gps_overrides`, `custom_map_path`, `custom_marker_overrides`, `custom_autoplot_enabled`, `heading`, `custom_heading`, `tile_view`, `custom_view`. Each page is independently calibratable and rotatable.
+- `PageAssignments` — owns the page dict, with `assign_photo`, `unassign_photo`, `add_page`, `remove_page` (reassigns to Page 1), `rename_page`, `prune_to_photos` (removes stale paths from pages and editor state), and `auto_assign_unassigned` (Page 1 catches everything by default).
+- `AppState.assignment_mode` (`"group"` | `"page"`) selects which mode drives the editor and exports. Group mode data is untouched while Page mode is active and vice versa.
+- `HTMLMapGenerator.generate_multi_page_html()` builds a single self-contained HTML containing every page's background, photos, marker pixels, and legend; the deliverable's JS swaps backgrounds, marker overlays, lightbox scope, and legend rows on page change.
+- `marker_utils.get_plain_marker_bytes()` (called from the multi-page generator) returns the user's logo without the colored rectangle outline — Page mode has no per-group color.
+- Page state persists in `map_overrides.json` and saved projects with backward-compatible defaults so older projects load as Group mode with no pages.
+
+---
+
 ## Future Considerations
 
 ### Potential Enhancements (Not Currently Planned)
@@ -201,3 +225,4 @@ Branding is intentionally global rather than per-project — the typical user is
 - Batch folder processing
 - Export to other formats (GeoJSON, GPX)
 - Photo grouping/clustering for dense areas
+- Multi-page KMZ export (currently single-page, group/placement based)

@@ -4,7 +4,7 @@
 
 ---
 
-## Project Status: v3.2.0 - Feature Complete
+## Project Status: Feature Complete (Page Mode merged to main)
 
 All planned features implemented. Windows and macOS builds available via GitHub Actions.
 
@@ -14,6 +14,7 @@ All planned features implemented. Windows and macOS builds available via GitHub 
 - Offline HTML export uses a stitched 2k snapshot (no API key required)
 - Tile-based preview matches the export snapshot
 - Manual placement for non-GPS photos and per-photo group labels in the editor
+- Page mode: organize photos into named deliverable pages; multi-page interactive HTML export with per-page background, view, rotation, and legend
 - CI builds Windows `.exe` installer and macOS `.dmg` on manual dispatch
 
 ---
@@ -71,6 +72,15 @@ All planned features implemented. Windows and macOS builds available via GitHub 
 - [x] `assets/app.html` — Branding section in Options → Settings: logo upload row with preview + reset, four company info inputs that auto-save on blur; CSS for marker badge in lower-right corner; obsolete `computeLabelOffset` and black-group green-text JS removed
 - [x] Verified end-to-end: backwards compat (no branding configured), JPG/PNG/wide/tall/oversized uploads, invalid file errors, website normalization, logo center pixels preserved (no tinting), default + black + colored group rectangles
 
+### Phase 15: Page Mode
+- [x] `src/photo_pages.py` — new module with `PhotoPage`, `PageEditorState`, `PageAssignments`; Page 1 locked default; `add_page`, `remove_page` (reassigns photos to Page 1), `rename_page`, `assign_photo`, `prune_to_photos`, `auto_assign_unassigned`, `clear_all`
+- [x] `src/main.py` — `AppState.assignment_mode` (`"group"` | `"page"`) and `page_assignments`; pywebview API: `set_assignment_mode`, `get_assignment_state`, `add_page`, `delete_page`, `rename_page`, `assign_photo_page`, `select_page_custom_map_image`; `_serialize_page_state()` and `_sync_page_assignments()` keep frontend state in sync; per-page editor state (map source, GPS/custom overrides, headings, views) loaded/saved with project memory and `map_overrides.json`
+- [x] `src/marker_utils.py` — plain marker variant (no colored rectangle outline) for Page mode markers
+- [x] `src/html_map_generator.py` — `generate_multi_page_html()` builds a single self-contained HTML with ordered `pages[]` payload (id, name, background, dimensions, photos, marker pixels, legend); deliverable JS swaps background, markers, lightbox scope, and legend on page change
+- [x] `assets/app.html` — `Group | Page` segmented toggle replacing the static "Groups" heading; page list with add/rename/delete; neutral page-assignment dot in file list when in Page mode; editor sidebar page selector with Auto/Custom source toggle; mode-aware export/deploy paths
+- [x] `tests/test_photo_pages.py`, `tests/test_page_backend_state.py`, `tests/test_html_multi_page_generator.py` — unit tests for assignment lifecycle, sync/prune behavior, and multi-page HTML generation
+- [x] `docs/page-mode-feature-plan.md` — feature plan checked into the repo
+
 ### Phase 12: Build & CI Setup
 - [x] `build/build.py` with `src.google_drive` hidden import
 - [x] `PicPlotter.spec` updated for new repo path + google_drive module
@@ -126,11 +136,37 @@ Before distribution, verify:
 - [ ] KMZ markers unchanged (still red dot - explicit out-of-scope)
 - [ ] Marker number badges visible against any logo background
 
+### Page Mode (Phase 15)
+- [ ] `Group | Page` toggle switches active mode without losing the inactive mode's data
+- [ ] Page mode hides color swatches/picker and group-mode controls
+- [ ] Add page → appears in page list; default name is "Page N"
+- [ ] Rename page → name updates everywhere it's shown
+- [ ] Delete non-default page → its photos move to Page 1; Page 1 cannot be deleted
+- [ ] Assign photo to page → file list dot reflects the assigned page; reassignment moves the photo, never duplicates
+- [ ] Editor page selector swaps the active page's background, view, rotation, and placements
+- [ ] Page can use Auto satellite mode or Custom image mode independently of other pages
+- [ ] Manual placement, custom calibration, and custom auto-plot all work per active page
+- [ ] Multi-page HTML export produces a single file with page navigation, per-page background, and per-page legend
+- [ ] Page mode markers use the user's logo with no colored rectangle outline
+- [ ] Group mode export/deploy still uses the existing single-page generator path
+- [ ] KMZ export still works in both modes (single-page, group/placement based)
+- [ ] Saved project with Page mode reloads with all pages, assignments, and per-page editor state intact
+- [ ] Legacy project saved before Page mode loads as Group mode with no pages defined
+
 ---
 
 ## Version History
 
-### v3.2.0 (Current)
+### Page Mode (unreleased, on main)
+- New `assignment_mode: "group" | "page"` state with a Group/Page toggle in the UI
+- Photos can be organized into named pages (Page 1 locked as default; deleting a page reassigns its photos to Page 1)
+- Each page owns its own editor state: map source (Auto satellite or Custom image), GPS overrides, custom marker overrides, headings, and tile/custom view
+- Multi-page interactive HTML deliverable with page navigation and per-page legend
+- Page mode markers use the user's logo without the colored rectangle outline
+- KMZ export remains group/placement based (single-page)
+- New `src/photo_pages.py` module and `tests/` directory with unit coverage for page assignments, backend state sync, and multi-page HTML generation
+
+### v3.2.0
 - User-configurable branding: upload custom logo (JPG/PNG) and company contact info; settings stored globally at `~/.picplotter_auto/logo.png` and `config.json`
 - Markers re-engineered: logo pixels are preserved unchanged; group identity comes from a colored rectangular outline drawn around the logo (default group = black rectangle)
 - Marker numbers moved to a small white badge in the lower-right corner so they remain readable against any logo
