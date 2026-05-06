@@ -476,132 +476,6 @@
             justify-content: center;
         }
 
-        .page-badge {
-            min-width: 22.5px;
-            height: 22.5px;
-            padding: 0 8px;
-            border-radius: 11px;
-            border: 1px dashed var(--panel-border);
-            background: #1a2622;
-            color: var(--text);
-            font-size: 11px;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            cursor: pointer;
-            margin-left: auto;
-            white-space: nowrap;
-            max-width: 110px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            transition: transform 0.15s ease, box-shadow 0.15s ease;
-        }
-
-        .page-badge.unassigned {
-            color: var(--muted);
-            background: #0c1412;
-        }
-
-        .page-badge.warn {
-            border-color: #d8923f;
-            color: #f4c181;
-        }
-
-        .page-badge:hover {
-            transform: scale(1.04);
-            box-shadow: 0 0 0 2px rgba(42, 157, 110, 0.35);
-        }
-
-        .org-mode-toggle {
-            display: inline-flex;
-            gap: 4px;
-            padding: 2px;
-            background: #0c1412;
-            border: 1px solid var(--panel-border);
-            border-radius: 999px;
-        }
-
-        .org-mode-toggle button {
-            padding: 4px 12px;
-            font-size: 12px;
-            border-radius: 999px;
-            background: transparent;
-            color: var(--muted);
-            border: none;
-            cursor: pointer;
-        }
-
-        .org-mode-toggle button.active {
-            background: var(--accent);
-            color: #0b0f0d;
-            font-weight: 700;
-        }
-
-        .org-mode-toggle button:hover:not(.active) {
-            color: var(--text);
-        }
-
-        .page-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 8px;
-            border-radius: 8px;
-            cursor: pointer;
-            color: var(--text);
-            font-size: 12px;
-        }
-
-        .page-item:hover {
-            background: rgba(34, 53, 47, 0.6);
-        }
-
-        .page-item.selected {
-            background: var(--accent);
-            color: #0b0f0d;
-        }
-
-        .page-item .page-marker {
-            width: 18px;
-            height: 18px;
-            border-radius: 4px;
-            border: 1px dashed var(--panel-border);
-            background: #1a2622;
-            flex-shrink: 0;
-        }
-
-        .page-item .page-name {
-            flex: 1;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .page-item .page-count {
-            font-size: 11px;
-            color: inherit;
-            opacity: 0.75;
-        }
-
-        #pages-list {
-            border: 1px solid var(--panel-border);
-            border-radius: 10px;
-            background: #0f1714;
-            padding: 6px;
-            overflow: auto;
-            min-height: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            flex: 1;
-        }
-
-        .file-item.dim-non-page {
-            opacity: 0.45;
-        }
-
         .file-item.has-gps {
             color: var(--text);
         }
@@ -1163,20 +1037,16 @@
                     </div>
 
                     <div id="side-panels">
-                        <div id="groups-panel" class="panel mode-group">
+                        <div id="groups-panel" class="panel">
                             <div class="panel-header">
-                                <div id="org-mode-toggle" class="mode-toggle org-mode-toggle" role="tablist">
-                                    <button type="button" id="org-mode-group" class="secondary active" role="tab" aria-selected="true">Groups</button>
-                                    <button type="button" id="org-mode-page" class="secondary" role="tab" aria-selected="false">Pages</button>
-                                </div>
+                                <h3>Groups</h3>
                                 <div class="actions">
-                                    <button id="delete-org-item" class="secondary icon-button" title="Delete">-</button>
-                                    <button id="add-org-item" class="secondary icon-button" title="Add">+</button>
+                                    <button id="delete-group" class="secondary icon-button" title="Delete group">-</button>
+                                    <button id="add-group" class="secondary icon-button" title="Add group">+</button>
                                 </div>
                             </div>
                             <div id="group-hint" class="hint">Assign a group using the dot next to a photo.</div>
                             <div id="groups-list"></div>
-                            <div id="pages-list" hidden></div>
                         </div>
 
                         <div id="options-panel" class="panel">
@@ -1333,25 +1203,6 @@
                             <div id="editor-photo-hint" class="hint"></div>
                         </div>
 
-                        <div id="editor-pages-panel" class="panel" style="gap:10px;display:none;">
-                            <div style="display:flex;justify-content:space-between;align-items:center;">
-                                <label>Pages</label>
-                                <div class="actions">
-                                    <button id="editor-delete-page" class="secondary icon-button" title="Delete active page">-</button>
-                                    <button id="editor-add-page" class="secondary icon-button" title="Add page">+</button>
-                                </div>
-                            </div>
-                            <div id="editor-pages-list"></div>
-                            <div id="editor-page-hint" class="hint"></div>
-                            <div id="editor-page-custom-map" style="display:none;">
-                                <div class="hint" id="editor-page-custom-map-name">No custom image</div>
-                                <div class="actions">
-                                    <button id="editor-page-upload-map" class="secondary" type="button">Custom Image</button>
-                                    <button id="editor-page-clear-map" class="secondary" type="button">Use Tiles</button>
-                                </div>
-                            </div>
-                        </div>
-
                         <div id="custom-image-panel" class="panel" style="gap:10px;display:none;">
                             <label>Custom Image</label>
                             <div id="custom-image-name" class="value">No image selected</div>
@@ -1446,7 +1297,6 @@
 
     <div id="group-picker" class="popup-menu" role="menu" aria-hidden="true"></div>
     <div id="color-picker" class="popup-menu" role="menu" aria-hidden="true"></div>
-    <div id="page-picker" class="popup-menu" role="menu" aria-hidden="true"></div>
     <div id="photo-preview" aria-hidden="true">
         <img id="photo-preview-img" alt="Photo preview">
     </div>
@@ -1481,10 +1331,7 @@
             groups: [],
             presetColors: [],
             markerImages: {},
-            selectedGroupId: null,
-            organizationMode: INITIAL_STATE.organization_mode === "page" ? "page" : "group",
-            pages: Array.isArray(INITIAL_STATE.pages) ? INITIAL_STATE.pages : [],
-            activePageId: INITIAL_STATE.active_page_id || null
+            selectedGroupId: null
         };
 
         const fileSelection = {
@@ -1498,12 +1345,8 @@
         const fileListEl = document.getElementById("file-list");
         const fileCountEl = document.getElementById("file-count");
         const groupsListEl = document.getElementById("groups-list");
-        const pagesListEl = document.getElementById("pages-list");
-        const groupsPanelEl = document.getElementById("groups-panel");
-        const addOrgItemBtn = document.getElementById("add-org-item");
-        const deleteOrgItemBtn = document.getElementById("delete-org-item");
-        const orgModeGroupBtn = document.getElementById("org-mode-group");
-        const orgModePageBtn = document.getElementById("org-mode-page");
+        const addGroupBtn = document.getElementById("add-group");
+        const deleteGroupBtn = document.getElementById("delete-group");
         const groupHintEl = document.getElementById("group-hint");
         const statusTextEl = document.getElementById("status-text");
         const progressFillEl = document.getElementById("progress-fill");
@@ -1549,7 +1392,6 @@
         const resetEditorBtn = document.getElementById("reset-editor");
         const groupPickerEl = document.getElementById("group-picker");
         const colorPickerEl = document.getElementById("color-picker");
-        const pagePickerEl = document.getElementById("page-picker");
         const photoPreviewEl = document.getElementById("photo-preview");
         const photoPreviewImg = document.getElementById("photo-preview-img");
 
@@ -1906,10 +1748,6 @@
             if (!groupHintEl) {
                 return;
             }
-            if (state.organizationMode === "page") {
-                updatePageHint();
-                return;
-            }
             const selectedCount = fileSelection.paths.size;
             if (selectedCount > 0) {
                 const label = selectedCount === 1 ? "1 photo selected" : `${selectedCount} photos selected`;
@@ -1931,8 +1769,8 @@
             groupsListEl.innerHTML = "";
             if (!state.groups.length) {
                 updateGroupHint();
-                if (deleteOrgItemBtn && state.organizationMode === "group") {
-                    deleteOrgItemBtn.disabled = true;
+                if (deleteGroupBtn) {
+                    deleteGroupBtn.disabled = true;
                 }
                 return;
             }
@@ -2015,9 +1853,9 @@
             });
 
             updateGroupHint();
-            if (deleteOrgItemBtn && state.organizationMode === "group") {
+            if (deleteGroupBtn) {
                 const selected = getGroupById(state.selectedGroupId);
-                deleteOrgItemBtn.disabled = !selected || selected.locked;
+                deleteGroupBtn.disabled = !selected || selected.locked;
             }
         }
 
@@ -2063,7 +1901,6 @@
             }
             closeGroupPicker();
             closeColorPicker();
-            closePagePicker();
             groupPickerEl.innerHTML = "";
             const targetPaths = fileSelection.paths.has(filepath)
                 ? getSelectedPhotoPaths()
@@ -2156,380 +1993,6 @@
             }
         }
 
-        /* ── Pages (sibling of groups) ─────────────────────────── */
-
-        let activePagePickerPath = null;
-
-        function applyPagePayload(payload) {
-            if (!payload || payload.status !== "ok") {
-                return;
-            }
-            state.pages = Array.isArray(payload.pages) ? payload.pages : [];
-            if (Object.prototype.hasOwnProperty.call(payload, "active_page_id")) {
-                state.activePageId = payload.active_page_id || null;
-            }
-            if (state.activePageId && !state.pages.some((page) => page.id === state.activePageId)) {
-                state.activePageId = null;
-            }
-        }
-
-        function getPageById(pageId) {
-            return state.pages.find((page) => page.id === pageId);
-        }
-
-        function getPageDisplayName(page) {
-            if (!page) return "";
-            return page.name || page.id || "";
-        }
-
-        function shortPageLabel(name) {
-            const trimmed = String(name || "").trim();
-            if (!trimmed) return "—";
-            return trimmed.length > 14 ? trimmed.slice(0, 13) + "…" : trimmed;
-        }
-
-        function updatePageHint() {
-            if (!groupHintEl) return;
-            if (!state.pages.length) {
-                groupHintEl.textContent = "Create a page with + to begin.";
-                return;
-            }
-            const selectedCount = fileSelection.paths.size;
-            if (selectedCount > 0) {
-                const label = selectedCount === 1 ? "1 photo selected" : `${selectedCount} photos selected`;
-                groupHintEl.textContent = `${label}. Click the badge on a selected photo to assign.`;
-                return;
-            }
-            const active = getPageById(state.activePageId);
-            if (active) {
-                groupHintEl.textContent = `Active: ${getPageDisplayName(active)}. Use the badge on a photo to assign.`;
-            } else {
-                groupHintEl.textContent = "Select a page, then assign photos with their badge.";
-            }
-        }
-
-        function renderPages() {
-            if (!pagesListEl) return;
-            pagesListEl.innerHTML = "";
-            if (!state.pages.length) {
-                updatePageHint();
-                if (deleteOrgItemBtn && state.organizationMode === "page") {
-                    deleteOrgItemBtn.disabled = true;
-                }
-                return;
-            }
-            state.pages.forEach((page) => {
-                const item = document.createElement("div");
-                item.className = "page-item";
-                if (page.id === state.activePageId) {
-                    item.classList.add("selected");
-                }
-                item.addEventListener("click", () => selectActivePage(page.id));
-
-                const marker = document.createElement("div");
-                marker.className = "page-marker";
-
-                const name = document.createElement("div");
-                name.className = "page-name";
-                name.textContent = getPageDisplayName(page);
-                name.title = "Double-click to rename";
-
-                const renameInput = document.createElement("input");
-                renameInput.type = "text";
-                renameInput.className = "group-rename-input";
-                renameInput.placeholder = "Page name";
-                renameInput.value = page.name || "";
-                let skipCommit = false;
-                const originalValue = renameInput.value;
-                renameInput.addEventListener("click", (event) => event.stopPropagation());
-                renameInput.addEventListener("keydown", (event) => {
-                    event.stopPropagation();
-                    if (event.key === "Enter") {
-                        event.preventDefault();
-                        renameInput.blur();
-                    } else if (event.key === "Escape") {
-                        event.preventDefault();
-                        skipCommit = true;
-                        renameInput.value = originalValue;
-                        renameInput.blur();
-                    }
-                });
-                renameInput.addEventListener("blur", () => {
-                    if (skipCommit) {
-                        skipCommit = false;
-                        return;
-                    }
-                    const trimmed = renameInput.value.trim();
-                    if (!trimmed || trimmed === originalValue.trim()) {
-                        return;
-                    }
-                    renamePage(page.id, trimmed);
-                });
-                name.addEventListener("dblclick", (event) => {
-                    event.stopPropagation();
-                    renameInput.focus();
-                    renameInput.select();
-                });
-
-                const count = document.createElement("div");
-                count.className = "page-count";
-                count.textContent = String(page.count || 0);
-
-                item.appendChild(marker);
-                item.appendChild(name);
-                item.appendChild(renameInput);
-                item.appendChild(count);
-                pagesListEl.appendChild(item);
-            });
-            updatePageHint();
-            if (deleteOrgItemBtn && state.organizationMode === "page") {
-                deleteOrgItemBtn.disabled = !state.activePageId;
-            }
-        }
-
-        async function refreshPages() {
-            if (!window.pywebview || !window.pywebview.api) return;
-            try {
-                const result = await window.pywebview.api.get_pages();
-                applyPagePayload(result);
-                renderPages();
-            } catch (err) {
-                // Ignore.
-            }
-        }
-
-        function closePagePicker() {
-            if (!pagePickerEl) return;
-            pagePickerEl.classList.remove("active");
-            pagePickerEl.setAttribute("aria-hidden", "true");
-            activePagePickerPath = null;
-            document.removeEventListener("click", handlePagePickerOutside);
-            document.removeEventListener("keydown", handlePagePickerKeydown);
-        }
-
-        function handlePagePickerOutside(event) {
-            if (pagePickerEl && !pagePickerEl.contains(event.target)) {
-                closePagePicker();
-            }
-        }
-
-        function handlePagePickerKeydown(event) {
-            if (event.key === "Escape") {
-                closePagePicker();
-            }
-        }
-
-        function openPagePicker(filepath, anchorEl) {
-            if (!pagePickerEl) return;
-            closePagePicker();
-            closeGroupPicker();
-            closeColorPicker();
-            pagePickerEl.innerHTML = "";
-            const targetPaths = fileSelection.paths.has(filepath)
-                ? getSelectedPhotoPaths()
-                : [filepath];
-
-            if (!state.pages.length) {
-                const hint = document.createElement("div");
-                hint.className = "popup-item";
-                hint.style.color = "var(--muted)";
-                hint.textContent = "Create a page with +";
-                pagePickerEl.appendChild(hint);
-            } else {
-                const unassigned = document.createElement("div");
-                unassigned.className = "popup-item";
-                unassigned.style.color = "var(--muted)";
-                unassigned.textContent = "— Unassigned";
-                unassigned.addEventListener("click", () => assignPhotoPage(targetPaths, null));
-                pagePickerEl.appendChild(unassigned);
-
-                state.pages.forEach((page) => {
-                    const item = document.createElement("div");
-                    item.className = "popup-item";
-                    const marker = document.createElement("div");
-                    marker.className = "page-marker";
-                    marker.style.width = "14px";
-                    marker.style.height = "14px";
-                    marker.style.borderRadius = "3px";
-                    const label = document.createElement("div");
-                    label.textContent = getPageDisplayName(page);
-                    item.appendChild(marker);
-                    item.appendChild(label);
-                    item.addEventListener("click", () => assignPhotoPage(targetPaths, page.id));
-                    pagePickerEl.appendChild(item);
-                });
-            }
-
-            const rect = anchorEl.getBoundingClientRect();
-            pagePickerEl.style.left = `${Math.round(rect.left)}px`;
-            pagePickerEl.style.top = `0px`;
-            pagePickerEl.classList.add("active");
-            pagePickerEl.setAttribute("aria-hidden", "false");
-            const menuHeight = pagePickerEl.offsetHeight;
-            const spaceBelow = window.innerHeight - rect.bottom - 6;
-            if (menuHeight > spaceBelow && rect.top > menuHeight) {
-                pagePickerEl.style.top = `${Math.round(rect.top - menuHeight - 6)}px`;
-            } else {
-                pagePickerEl.style.top = `${Math.round(rect.bottom + 6)}px`;
-            }
-            activePagePickerPath = filepath;
-            document.addEventListener("click", handlePagePickerOutside);
-            document.addEventListener("keydown", handlePagePickerKeydown);
-        }
-
-        async function assignPhotoPage(filepaths, pageId) {
-            if (!window.pywebview || !window.pywebview.api) return;
-            const targets = Array.isArray(filepaths) ? filepaths.filter(Boolean) : [filepaths];
-            if (!targets.length) return;
-            closePagePicker();
-            try {
-                const result = await window.pywebview.api.assign_photo_page(targets, pageId);
-                if (result && result.status === "ok") {
-                    state.photos = result.photos || state.photos;
-                    applyPagePayload(result);
-                    renderFileList();
-                    renderPages();
-                }
-            } catch (err) {
-                // Ignore.
-            }
-        }
-
-        async function addPage() {
-            if (!window.pywebview || !window.pywebview.api) return;
-            try {
-                const result = await window.pywebview.api.add_page("");
-                if (result && result.status === "ok") {
-                    applyPagePayload(result);
-                    if (result.page_id) {
-                        state.activePageId = result.page_id;
-                    }
-                    renderPages();
-                }
-            } catch (err) {
-                // Ignore.
-            }
-        }
-
-        async function deletePage() {
-            const active = getPageById(state.activePageId);
-            if (!active) return;
-            const ok = await showConfirm({
-                title: "Delete page?",
-                message: `Photos on "${getPageDisplayName(active)}" will become unassigned.`,
-                acceptLabel: "Delete"
-            });
-            if (!ok) return;
-            if (!window.pywebview || !window.pywebview.api) return;
-            try {
-                const result = await window.pywebview.api.delete_page(active.id);
-                if (result && result.status === "ok") {
-                    applyPagePayload(result);
-                    if (result.photos) {
-                        state.photos = result.photos;
-                    }
-                    renderFileList();
-                    renderPages();
-                }
-            } catch (err) {
-                // Ignore.
-            }
-        }
-
-        async function renamePage(pageId, newName) {
-            if (!window.pywebview || !window.pywebview.api) return;
-            const trimmed = String(newName || "").trim();
-            if (!trimmed) {
-                renderPages();
-                return;
-            }
-            try {
-                const result = await window.pywebview.api.rename_page(pageId, trimmed);
-                if (result && result.status === "ok") {
-                    applyPagePayload(result);
-                    renderPages();
-                    renderFileList();
-                }
-            } catch (err) {
-                renderPages();
-            }
-        }
-
-        async function selectActivePage(pageId) {
-            if (!window.pywebview || !window.pywebview.api) return;
-            try {
-                const result = await window.pywebview.api.set_active_page(pageId);
-                if (result && result.status === "ok") {
-                    state.activePageId = result.active_page_id || null;
-                    state.pages = state.pages.map((page) => ({
-                        ...page,
-                        is_active: page.id === state.activePageId,
-                    }));
-                    renderPages();
-                    renderFileList();
-                }
-            } catch (err) {
-                // Ignore.
-            }
-        }
-
-        function applyOrganizationMode(mode) {
-            const normalized = mode === "page" ? "page" : "group";
-            state.organizationMode = normalized;
-            if (groupsPanelEl) {
-                groupsPanelEl.classList.toggle("mode-page", normalized === "page");
-                groupsPanelEl.classList.toggle("mode-group", normalized === "group");
-            }
-            if (orgModeGroupBtn) {
-                orgModeGroupBtn.classList.toggle("active", normalized === "group");
-                orgModeGroupBtn.setAttribute("aria-selected", normalized === "group" ? "true" : "false");
-            }
-            if (orgModePageBtn) {
-                orgModePageBtn.classList.toggle("active", normalized === "page");
-                orgModePageBtn.setAttribute("aria-selected", normalized === "page" ? "true" : "false");
-            }
-            if (groupsListEl) {
-                groupsListEl.hidden = normalized !== "group";
-            }
-            if (pagesListEl) {
-                pagesListEl.hidden = normalized !== "page";
-            }
-            if (addOrgItemBtn) {
-                addOrgItemBtn.title = normalized === "page" ? "Add page" : "Add group";
-            }
-            if (deleteOrgItemBtn) {
-                deleteOrgItemBtn.title = normalized === "page" ? "Delete page" : "Delete group";
-            }
-            if (normalized === "page") {
-                renderPages();
-            } else {
-                renderGroups();
-            }
-            renderFileList();
-        }
-
-        async function setOrganizationMode(mode) {
-            const target = mode === "page" ? "page" : "group";
-            if (state.organizationMode === target) return;
-            if (!window.pywebview || !window.pywebview.api) {
-                applyOrganizationMode(target);
-                return;
-            }
-            try {
-                const result = await window.pywebview.api.set_organization_mode(target);
-                if (result && result.status === "ok") {
-                    if (result.groups) applyGroupPayload(result.groups);
-                    if (result.pages) applyPagePayload(result.pages);
-                    if (result.photos) state.photos = result.photos;
-                    applyOrganizationMode(result.mode || target);
-                }
-            } catch (err) {
-                applyOrganizationMode(target);
-            }
-        }
-
-        /* ───────────────────────────────────────────────────────── */
-
         function closeColorPicker() {
             if (!colorPickerEl) {
                 return;
@@ -2559,7 +2022,6 @@
             }
             closeColorPicker();
             closeGroupPicker();
-            closePagePicker();
             colorPickerEl.innerHTML = "";
             const grid = document.createElement("div");
             grid.className = "color-grid";
@@ -2746,7 +2208,6 @@
             fileListEl.innerHTML = "";
             hidePhotoPreview();
             closeGroupPicker();
-            closePagePicker();
             syncFileSelection();
             if (!state.photos.length) {
                 fileCountEl.textContent = "No photos selected";
@@ -2786,51 +2247,20 @@
                     badge.textContent = "---";
                 }
 
-                let badgeEl;
-                if (state.organizationMode === "page") {
-                    badgeEl = document.createElement("div");
-                    badgeEl.className = "page-badge";
-                    if (photo.page_id) {
-                        const assignedPage = getPageById(photo.page_id);
-                        const label = assignedPage ? assignedPage.name : (photo.page_name || "");
-                        badgeEl.textContent = shortPageLabel(label);
-                        badgeEl.title = label || "";
-                    } else {
-                        badgeEl.classList.add("unassigned");
-                        badgeEl.textContent = "—";
-                        badgeEl.title = "Unassigned";
-                    }
-                    if (!hasGps && !hasOverride) {
-                        const assignedPage = getPageById(photo.page_id);
-                        if (!photo.page_id || (assignedPage && !assignedPage.custom_map_path)) {
-                            badgeEl.classList.add("warn");
-                            badgeEl.title = "No GPS — assign to a custom-map page";
-                        }
-                    }
-                    badgeEl.addEventListener("click", (event) => {
-                        event.stopPropagation();
-                        openPagePicker(photo.filepath, badgeEl);
-                    });
-                    if (state.activePageId && photo.page_id !== state.activePageId) {
-                        item.classList.add("dim-non-page");
-                    }
-                } else {
-                    badgeEl = document.createElement("div");
-                    badgeEl.className = "group-dot";
-                    const groupColor = photo.group_color || "default";
-                    const group = getGroupById(photo.group_id);
-                    badgeEl.style.background = groupColor === "default" ? "#ffffff" : groupColor;
-                    badgeEl.title = group ? getGroupDisplayName(group) : "Default";
-                    if (groupColor === "default") {
-                        badgeEl.classList.add("default");
-                        badgeEl.textContent = "D";
-                    }
-                    badgeEl.addEventListener("click", (event) => {
-                        event.stopPropagation();
-                        openGroupPicker(photo.filepath, badgeEl);
-                    });
+                const groupDot = document.createElement("div");
+                groupDot.className = "group-dot";
+                const groupColor = photo.group_color || "default";
+                const group = getGroupById(photo.group_id);
+                groupDot.style.background = groupColor === "default" ? "#ffffff" : groupColor;
+                groupDot.title = group ? getGroupDisplayName(group) : "Default";
+                if (groupColor === "default") {
+                    groupDot.classList.add("default");
+                    groupDot.textContent = "D";
                 }
-                const groupDot = badgeEl;
+                groupDot.addEventListener("click", (event) => {
+                    event.stopPropagation();
+                    openGroupPicker(photo.filepath, groupDot);
+                });
 
                 const thumb = document.createElement("div");
                 thumb.className = "file-thumb";
@@ -2954,7 +2384,6 @@
                 if (result && result.status === "ok") {
                     state.photos = result.photos || [];
                     await refreshGroups();
-                    await refreshPages();
                     renderFileList();
                     if (result.warnings && result.warnings.length) {
                         setStatus(`Loaded with warnings: ${result.warnings[0]}`, true);
@@ -3062,7 +2491,6 @@
                 if (result && result.status === "ok") {
                     state.photos = result.photos || [];
                     await refreshGroups();
-                    await refreshPages();
                     renderFileList();
                     if (result.warnings && result.warnings.length) {
                         setStatus(`Imported with warnings: ${result.warnings[0]}`, true);
@@ -3098,7 +2526,6 @@
                 if (result && result.status === "ok") {
                     state.photos = result.photos || [];
                     await refreshGroups();
-                    await refreshPages();
                     renderFileList();
                     if (result.warnings && result.warnings.length) {
                         setStatus(`Imported with warnings: ${result.warnings[0]}`, true);
@@ -3136,7 +2563,6 @@
             state.placedCount = 0;
             applyGroupPayload(result);
             renderGroups();
-            await refreshPages();
             renderFileList();
         }
 
@@ -3167,7 +2593,6 @@
             applyGroupPayload(result);
             clearFileSelection();
             renderGroups();
-            await refreshPages();
             renderFileList();
             setStatus("Photos deleted.");
         }
@@ -3550,52 +2975,9 @@
                 return;
             }
             await refreshGroups();
-            const isPageContext = result.organization_mode === "page";
-            if (isPageContext) {
-                state.organizationMode = "page";
-                state.pages = Array.isArray(result.pages) ? result.pages : [];
-                state.activePageId = result.active_page_id || null;
-            }
             const hasGpsData = (result.photos || []).some((photo) => Boolean(photo.gps));
             let mapMode = MAP_SOURCE_TILES;
-            let customSelection = null;
-
-            if (isPageContext) {
-                // Page mode: map mode is determined by the active page.
-                const activeId = state.activePageId || (state.pages.length ? state.pages[0].id : null);
-                const activePage = activeId ? state.pages.find((p) => p.id === activeId) : null;
-                if (activePage && activePage.custom_map_path) {
-                    mapMode = MAP_SOURCE_CUSTOM;
-                    try {
-                        const info = await window.pywebview.api.load_custom_map_for_path(activePage.custom_map_path);
-                        if (info && info.status === "ok") {
-                            customSelection = {
-                                path: info.path,
-                                uri: info.uri,
-                                fileUri: info.file_uri,
-                                width: info.width,
-                                height: info.height,
-                                name: info.name,
-                                fromPayload: true
-                            };
-                        } else {
-                            mapMode = MAP_SOURCE_TILES;
-                        }
-                    } catch (err) {
-                        mapMode = MAP_SOURCE_TILES;
-                    }
-                } else {
-                    mapMode = MAP_SOURCE_TILES;
-                }
-                if (activeId && state.activePageId !== activeId) {
-                    try {
-                        await window.pywebview.api.set_active_page(activeId);
-                        state.activePageId = activeId;
-                    } catch (err) {
-                        // Ignore.
-                    }
-                }
-            } else if (!hasGpsData) {
+            if (!hasGpsData) {
                 mapMode = MAP_SOURCE_CUSTOM;
             } else {
                 const choice = await showMapSourcePicker();
@@ -3606,7 +2988,8 @@
                 mapMode = choice;
             }
 
-            if (!isPageContext && mapMode === MAP_SOURCE_CUSTOM) {
+            let customSelection = null;
+            if (mapMode === MAP_SOURCE_CUSTOM) {
                 customSelection = await resolveCustomMapSelection(result);
                 if (!customSelection) {
                     setStatus("Custom image required to continue.", true);
@@ -3736,29 +3119,11 @@
         document.getElementById("reset-output").addEventListener("click", resetOutputFolder);
         openEditorBtn.addEventListener("click", openEditor);
         createKmzBtn.addEventListener("click", startKmzExport);
-        if (addOrgItemBtn) {
-            addOrgItemBtn.addEventListener("click", () => {
-                if (state.organizationMode === "page") {
-                    addPage();
-                } else {
-                    addGroup();
-                }
-            });
+        if (addGroupBtn) {
+            addGroupBtn.addEventListener("click", addGroup);
         }
-        if (deleteOrgItemBtn) {
-            deleteOrgItemBtn.addEventListener("click", () => {
-                if (state.organizationMode === "page") {
-                    deletePage();
-                } else {
-                    deleteGroup();
-                }
-            });
-        }
-        if (orgModeGroupBtn) {
-            orgModeGroupBtn.addEventListener("click", () => setOrganizationMode("group"));
-        }
-        if (orgModePageBtn) {
-            orgModePageBtn.addEventListener("click", () => setOrganizationMode("page"));
+        if (deleteGroupBtn) {
+            deleteGroupBtn.addEventListener("click", deleteGroup);
         }
 
         /* ── Project save/load ─────────────────────────────────── */
@@ -3838,7 +3203,6 @@
                 if (result.photos) {
                     state.photos = result.photos;
                     await refreshGroups();
-                    await refreshPages();
                     renderFileList();
                 }
                 const parts = [];
@@ -3939,11 +3303,9 @@
         setOauthClientSecretLocked(Boolean(state.oauthClientSecret));
 
         updateButtons();
-        applyOrganizationMode(state.organizationMode);
         refreshGroups();
         window.addEventListener("pywebviewready", () => {
             refreshGroups();
-            refreshPages();
             loadNetlifyToken();
             loadBranding();
         });
@@ -3978,9 +3340,7 @@
             mapDrag: null,
             markerDrag: null,
             overrideTimer: null,
-            selectedIndex: null,
-            activePageId: null,
-            pageViewSaveTimer: null
+            selectedIndex: null
         };
 
         const editorStatusEl = document.getElementById("editor-status");
@@ -4001,15 +3361,6 @@
         const markerLayer = document.getElementById("editor-marker-layer");
         const exportBtn = document.getElementById("export-html");
         const rotationPanel = document.getElementById("editor-rotation-panel");
-        const editorPagesPanelEl = document.getElementById("editor-pages-panel");
-        const editorPagesListEl = document.getElementById("editor-pages-list");
-        const editorPageHintEl = document.getElementById("editor-page-hint");
-        const editorAddPageBtn = document.getElementById("editor-add-page");
-        const editorDeletePageBtn = document.getElementById("editor-delete-page");
-        const editorPageCustomMapEl = document.getElementById("editor-page-custom-map");
-        const editorPageCustomMapNameEl = document.getElementById("editor-page-custom-map-name");
-        const editorPageUploadMapBtn = document.getElementById("editor-page-upload-map");
-        const editorPageClearMapBtn = document.getElementById("editor-page-clear-map");
 
         const customImageEl = document.createElement("img");
         customImageEl.id = "editor-custom-image";
@@ -4019,331 +3370,6 @@
         function setEditorStatus(message, isWarning) {
             editorStatusEl.textContent = message || "";
             editorStatusEl.style.color = isWarning ? "var(--warning)" : "var(--muted)";
-        }
-
-        function isPageMode() {
-            return state.organizationMode === "page";
-        }
-
-        function getActivePage() {
-            if (!isPageMode() || !editor.activePageId) return null;
-            return getPageById(editor.activePageId);
-        }
-
-        function buildEditorPageView() {
-            return {
-                lat: editor.center && typeof editor.center.lat === "number" ? editor.center.lat : null,
-                lng: editor.center && typeof editor.center.lng === "number" ? editor.center.lng : null,
-                zoom: editor.mapMode === MAP_SOURCE_TILES ? editor.zoom : null,
-                heading: editor.tileHeading,
-                custom_center_x: editor.center && typeof editor.center.x === "number" ? editor.center.x : null,
-                custom_center_y: editor.center && typeof editor.center.y === "number" ? editor.center.y : null,
-                custom_zoom: editor.mapMode === MAP_SOURCE_CUSTOM ? editor.zoom : null,
-                custom_heading: editor.customHeading
-            };
-        }
-
-        function applyEditorPageView(view) {
-            if (!view) return;
-            const isCustom = editor.mapMode === MAP_SOURCE_CUSTOM;
-            if (isCustom) {
-                if (typeof view.custom_center_x === "number" && typeof view.custom_center_y === "number") {
-                    editor.center = { x: view.custom_center_x, y: view.custom_center_y };
-                }
-                if (typeof view.custom_zoom === "number" && view.custom_zoom > 0) {
-                    editor.zoom = view.custom_zoom;
-                }
-                if (typeof view.custom_heading === "number") {
-                    editor.customHeading = view.custom_heading;
-                    editor.heading = view.custom_heading;
-                }
-            } else {
-                if (typeof view.lat === "number" && typeof view.lng === "number") {
-                    editor.center = { lat: view.lat, lng: view.lng };
-                }
-                if (typeof view.zoom === "number" && view.zoom > 0) {
-                    editor.zoom = view.zoom;
-                }
-                if (typeof view.heading === "number") {
-                    editor.tileHeading = view.heading;
-                    editor.heading = view.heading;
-                }
-            }
-            if (rotationInput) {
-                rotationInput.value = editor.heading;
-                rotationValue.textContent = `${Math.round(editor.heading)}deg`;
-            }
-        }
-
-        function schedulePageViewSave() {
-            if (!isPageMode() || !editor.activePageId) return;
-            if (!window.pywebview || !window.pywebview.api) return;
-            if (editor.pageViewSaveTimer) {
-                clearTimeout(editor.pageViewSaveTimer);
-            }
-            const pageId = editor.activePageId;
-            editor.pageViewSaveTimer = setTimeout(() => {
-                editor.pageViewSaveTimer = null;
-                try {
-                    window.pywebview.api.save_page_view(pageId, buildEditorPageView());
-                } catch (err) {
-                    // Ignore.
-                }
-            }, 500);
-        }
-
-        function flushPageViewSave() {
-            if (!editor.activePageId || !window.pywebview || !window.pywebview.api) return;
-            if (editor.pageViewSaveTimer) {
-                clearTimeout(editor.pageViewSaveTimer);
-                editor.pageViewSaveTimer = null;
-            }
-            try {
-                window.pywebview.api.save_page_view(editor.activePageId, buildEditorPageView());
-            } catch (err) {
-                // Ignore.
-            }
-        }
-
-        function updateEditorPageHint() {
-            if (!editorPageHintEl) return;
-            if (!state.pages.length) {
-                editorPageHintEl.textContent = "Create a page with + to begin.";
-                return;
-            }
-            const active = getActivePage();
-            if (!active) {
-                editorPageHintEl.textContent = "Select a page to edit its view.";
-                return;
-            }
-            const tileMode = !active.custom_map_path;
-            editorPageHintEl.textContent = tileMode
-                ? `Editing "${active.name}" (tiles). Pan/zoom/rotate to set this page's view.`
-                : `Editing "${active.name}" (custom map). Drag markers to place photos.`;
-        }
-
-        function updateEditorPageCustomMap() {
-            if (!editorPageCustomMapEl) return;
-            const active = getActivePage();
-            if (!active) {
-                editorPageCustomMapEl.style.display = "none";
-                return;
-            }
-            editorPageCustomMapEl.style.display = "block";
-            if (active.custom_map_path) {
-                const name = active.custom_map_path.split(/[\\/]/).pop() || active.custom_map_path;
-                editorPageCustomMapNameEl.textContent = `Custom: ${name}`;
-                editorPageClearMapBtn.disabled = false;
-            } else {
-                editorPageCustomMapNameEl.textContent = "Tile mode (no custom image)";
-                editorPageClearMapBtn.disabled = true;
-            }
-        }
-
-        function renderEditorPages() {
-            if (!editorPagesListEl) return;
-            editorPagesListEl.innerHTML = "";
-            if (!state.pages.length) {
-                if (editorDeletePageBtn) editorDeletePageBtn.disabled = true;
-                updateEditorPageHint();
-                updateEditorPageCustomMap();
-                return;
-            }
-            state.pages.forEach((page) => {
-                const item = document.createElement("div");
-                item.className = "page-item";
-                if (page.id === editor.activePageId) {
-                    item.classList.add("selected");
-                }
-                item.addEventListener("click", () => switchEditorActivePage(page.id));
-
-                const marker = document.createElement("div");
-                marker.className = "page-marker";
-
-                const name = document.createElement("div");
-                name.className = "page-name";
-                name.textContent = getPageDisplayName(page);
-
-                const count = document.createElement("div");
-                count.className = "page-count";
-                count.textContent = String(page.count || 0);
-
-                item.appendChild(marker);
-                item.appendChild(name);
-                item.appendChild(count);
-                editorPagesListEl.appendChild(item);
-            });
-            if (editorDeletePageBtn) editorDeletePageBtn.disabled = !editor.activePageId;
-            updateEditorPageHint();
-            updateEditorPageCustomMap();
-        }
-
-        async function switchEditorActivePage(pageId) {
-            if (editor.activePageId === pageId) return;
-            // Save current view to previous active page first.
-            if (editor.activePageId) {
-                flushPageViewSave();
-            }
-            if (!window.pywebview || !window.pywebview.api) {
-                editor.activePageId = pageId;
-                state.activePageId = pageId;
-                renderEditorPages();
-                return;
-            }
-            try {
-                const result = await window.pywebview.api.set_active_page(pageId);
-                if (result && result.status === "ok") {
-                    editor.activePageId = result.active_page_id || null;
-                    state.activePageId = editor.activePageId;
-                    state.pages = state.pages.map((p) => ({
-                        ...p,
-                        is_active: p.id === editor.activePageId
-                    }));
-                    // Switch map mode based on whether the page has a custom image.
-                    const active = getActivePage();
-                    const targetMode = active && active.custom_map_path ? MAP_SOURCE_CUSTOM : MAP_SOURCE_TILES;
-                    if (editor.mapMode !== targetMode) {
-                        await switchEditorMapMode(targetMode, active);
-                    }
-                    if (result.view) {
-                        applyEditorPageView(result.view);
-                    }
-                    renderEditorPages();
-                    scheduleEditorRender();
-                }
-            } catch (err) {
-                // Ignore.
-            }
-        }
-
-        async function switchEditorMapMode(targetMode, page) {
-            editor.mapMode = targetMode;
-            if (targetMode === MAP_SOURCE_CUSTOM && page && page.custom_map_path) {
-                if (window.pywebview && window.pywebview.api) {
-                    try {
-                        const info = await window.pywebview.api.load_custom_map_for_path(page.custom_map_path);
-                        if (info && info.status === "ok") {
-                            setCustomMapInfo({
-                                path: info.path,
-                                uri: info.uri,
-                                fileUri: info.file_uri,
-                                width: info.width,
-                                height: info.height,
-                                name: info.name,
-                                fromPayload: true
-                            });
-                            await loadCustomMap();
-                        } else {
-                            setCustomMapInfo(null);
-                        }
-                    } catch (err) {
-                        setCustomMapInfo(null);
-                    }
-                }
-            } else if (targetMode === MAP_SOURCE_TILES) {
-                setCustomMapInfo(null);
-            }
-            setEditorModeUI();
-        }
-
-        async function addEditorPage() {
-            if (!window.pywebview || !window.pywebview.api) return;
-            try {
-                const result = await window.pywebview.api.add_page("");
-                if (result && result.status === "ok") {
-                    applyPagePayload(result);
-                    if (result.page_id) {
-                        editor.activePageId = result.page_id;
-                        state.activePageId = result.page_id;
-                    }
-                    renderEditorPages();
-                }
-            } catch (err) {
-                // Ignore.
-            }
-        }
-
-        async function deleteEditorPage() {
-            const active = getActivePage();
-            if (!active) return;
-            const ok = await showConfirm({
-                title: "Delete page?",
-                message: `Photos on "${active.name}" will become unassigned.`,
-                acceptLabel: "Delete"
-            });
-            if (!ok) return;
-            if (!window.pywebview || !window.pywebview.api) return;
-            try {
-                const result = await window.pywebview.api.delete_page(active.id);
-                if (result && result.status === "ok") {
-                    applyPagePayload(result);
-                    editor.activePageId = state.activePageId;
-                    if (result.photos) state.photos = result.photos;
-                    renderEditorPages();
-                }
-            } catch (err) {
-                // Ignore.
-            }
-        }
-
-        async function uploadActivePageCustomMap() {
-            const active = getActivePage();
-            if (!active) return;
-            if (!window.pywebview || !window.pywebview.api) return;
-            try {
-                const result = await window.pywebview.api.select_page_custom_map_image(active.id);
-                if (result && result.status === "ok") {
-                    applyPagePayload(result);
-                    if (result.custom_map) {
-                        editor.mapMode = MAP_SOURCE_CUSTOM;
-                        setCustomMapInfo({
-                            path: result.custom_map.path,
-                            uri: result.custom_map.uri,
-                            fileUri: result.custom_map.file_uri,
-                            width: result.custom_map.width,
-                            height: result.custom_map.height,
-                            name: result.custom_map.name,
-                            fromPayload: false
-                        });
-                        await loadCustomMap();
-                        editor.photos.forEach((photo) => {
-                            photo.pixel = null;
-                            photo.autoPixel = null;
-                            photo.calibrationPixel = null;
-                            photo.autoCommitted = false;
-                        });
-                        editor.zoom = 1;
-                        editor.center = { x: 0, y: 0 };
-                        setEditorModeUI();
-                    }
-                    renderEditorPages();
-                    scheduleEditorRender();
-                }
-            } catch (err) {
-                // Ignore.
-            }
-        }
-
-        async function clearActivePageCustomMap() {
-            const active = getActivePage();
-            if (!active || !active.custom_map_path) return;
-            if (!window.pywebview || !window.pywebview.api) return;
-            try {
-                const result = await window.pywebview.api.clear_page_custom_map(active.id);
-                if (result && result.status === "ok") {
-                    applyPagePayload(result);
-                    renderEditorPages();
-                    await switchEditorMapMode(MAP_SOURCE_TILES, getActivePage());
-                    scheduleEditorRender();
-                }
-            } catch (err) {
-                // Ignore.
-            }
-        }
-
-        function setEditorPagesPanelVisibility() {
-            if (!editorPagesPanelEl) return;
-            editorPagesPanelEl.style.display = isPageMode() ? "flex" : "none";
         }
 
         function isCustomMode() {
@@ -5399,19 +4425,13 @@
 
         function updateMarkerStyles() {
             const fontSize = computeLabelSize(editor.markerSize);
-            const pageModeMarkers = state.organizationMode === "page";
             editor.markerElements.forEach((marker, index) => {
                 if (!marker) {
                     return;
                 }
                 const photo = editor.photos[index];
-                let color;
-                if (pageModeMarkers) {
-                    color = "none";
-                } else {
-                    color = photo && photo.group_color ? photo.group_color : "default";
-                }
-                const icon = state.markerImages[color] || state.markerImages["none"] || MARKER_ICON;
+                const color = photo && photo.group_color ? photo.group_color : "default";
+                const icon = state.markerImages[color] || MARKER_ICON;
                 marker.style.width = `${editor.markerSize}px`;
                 marker.style.height = `${editor.markerSize}px`;
                 marker.style.backgroundImage = `url(${icon})`;
@@ -5992,29 +5012,8 @@
 
         function buildExportPayload() {
             const exportPhotos = getExportPhotos();
-            if (!exportPhotos.length && !isPageMode()) {
+            if (!exportPhotos.length) {
                 return null;
-            }
-            // Page-mode export: backend uses state.page_assignments for the
-            // per-page snapshot pipeline. The current editor's mapMode/markers
-            // only describe the active page's framing, so the payload mostly
-            // carries branding fields.
-            if (isPageMode()) {
-                if (editor.activePageId) {
-                    flushPageViewSave();
-                }
-                return {
-                    organization_mode: "page",
-                    marker_size: editor.markerSize,
-                    project_name: projectNameInput.value.trim() || "Photo Map",
-                    proposal_link: proposalLinkInput.value.trim(),
-                    client_name: clientNameInput ? clientNameInput.value.trim() : "",
-                    client_company: clientCompanyInput ? clientCompanyInput.value.trim() : "",
-                    client_address: clientAddressInput ? clientAddressInput.value.trim() : "",
-                    compression_quality: Number(qualityInput.value),
-                    export_width: __EXPORT_MAX_DIM__,
-                    export_height: __EXPORT_MAX_DIM__
-                };
             }
             const viewport = getViewportSize();
             if (isCustomMode()) {
@@ -6088,8 +5087,6 @@
                     window.pywebview.api.save_overrides(window.getEditorState());
                 }
             }, 500);
-            // In page mode, also debounce-save the active page's view.
-            schedulePageViewSave();
         }
 
         async function exportHtml() {
@@ -6098,18 +5095,16 @@
             }
             exportBtn.disabled = true;
             try {
-                if (!isPageMode()) {
-                    const unplacedNonGps = getUnplacedNonGpsPhotos();
-                    if (unplacedNonGps.length) {
-                        const ok = await showConfirm({
-                            title: "Unplaced photos",
-                            message: `${unplacedNonGps.length} photos without GPS are still unplaced and will be skipped in the export. Continue?`,
-                            acceptLabel: "Export anyway"
-                        });
-                        if (!ok) {
-                            setEditorStatus("Export cancelled.");
-                            return;
-                        }
+                const unplacedNonGps = getUnplacedNonGpsPhotos();
+                if (unplacedNonGps.length) {
+                    const ok = await showConfirm({
+                        title: "Unplaced photos",
+                        message: `${unplacedNonGps.length} photos without GPS are still unplaced and will be skipped in the export. Continue?`,
+                        acceptLabel: "Export anyway"
+                    });
+                    if (!ok) {
+                        setEditorStatus("Export cancelled.");
+                        return;
                     }
                 }
                 setEditorStatus("Building interactive image...");
@@ -6120,11 +5115,7 @@
                 }
                 const result = await window.pywebview.api.export_html(payload);
                 if (result && result.status === "ok") {
-                    if (result.warnings && result.warnings.length) {
-                        setEditorStatus(`Exported with warnings: ${result.warnings[0]}`, true);
-                    } else {
-                        setEditorStatus(`Interactive image exported: ${result.path}`);
-                    }
+                    setEditorStatus(`Interactive image exported: ${result.path}`);
                 } else if (result && result.status === "cancel") {
                     setEditorStatus("Export cancelled.");
                 } else if (result && result.status === "error") {
@@ -6147,9 +5138,6 @@
                         if (payload) {
                             await window.pywebview.api.save_overrides(payload);
                         }
-                    }
-                    if (isPageMode() && editor.activePageId) {
-                        flushPageViewSave();
                     }
                 } catch (err) {
                     // Ignore save failures on close.
@@ -6204,23 +5192,8 @@
                 has_gps: Boolean(photo.has_gps),
                 has_override: Boolean(photo.has_override),
                 group_id: photo.group_id || "default",
-                group_color: photo.group_color || "default",
-                page_id: photo.page_id || null,
-                page_name: photo.page_name || null
+                group_color: photo.group_color || "default"
             }));
-            // Sync organization mode + pages from the editor-state payload.
-            if (payload.organization_mode === "group" || payload.organization_mode === "page") {
-                state.organizationMode = payload.organization_mode;
-            }
-            if (Array.isArray(payload.pages)) {
-                state.pages = payload.pages;
-            }
-            if (Object.prototype.hasOwnProperty.call(payload, "active_page_id")) {
-                state.activePageId = payload.active_page_id || null;
-            }
-            editor.activePageId = state.activePageId;
-            applyOrganizationMode(state.organizationMode);
-            setEditorPagesPanelVisibility();
             editor.markerSize = payload.marker_size || editor.markerSize;
             editor.mapMode = mapMode || MAP_SOURCE_TILES;
             const payloadHeading = Number(payload.heading);
@@ -6264,15 +5237,6 @@
             } else {
                 editor.zoom = 3;
                 editor.center = { lat: 0, lng: 0 };
-            }
-
-            // Page mode: override default fit with the active page's saved view.
-            if (isPageMode()) {
-                renderEditorPages();
-                const active = getActivePage();
-                if (active && active.view) {
-                    applyEditorPageView(active.view);
-                }
             }
 
             const nextTarget = getNextTargetIndex();
@@ -6402,18 +5366,6 @@
         if (modePlotBtn && modeAdjustBtn) {
             modePlotBtn.addEventListener("click", () => setEditorMode(MODE_PLOT));
             modeAdjustBtn.addEventListener("click", () => setEditorMode(MODE_ADJUST));
-        }
-        if (editorAddPageBtn) {
-            editorAddPageBtn.addEventListener("click", addEditorPage);
-        }
-        if (editorDeletePageBtn) {
-            editorDeletePageBtn.addEventListener("click", deleteEditorPage);
-        }
-        if (editorPageUploadMapBtn) {
-            editorPageUploadMapBtn.addEventListener("click", uploadActivePageCustomMap);
-        }
-        if (editorPageClearMapBtn) {
-            editorPageClearMapBtn.addEventListener("click", clearActivePageCustomMap);
         }
 
         editorViewport.addEventListener("pointerdown", (event) => {
