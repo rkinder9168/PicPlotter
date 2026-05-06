@@ -226,6 +226,23 @@ class MarkerColorizer:
 
         return self._cache[cache_key]
 
+    def get_plain_marker(self, size: int) -> Image.Image:
+        """
+        Get the base marker/logo with no group-colored outline.
+
+        Page mode uses this so page identity does not alter the marker art.
+        """
+        cache_key = f"plain_{size}"
+        if cache_key not in self._cache:
+            if self._base_image is not None:
+                self._cache[cache_key] = self._base_image.resize(
+                    (size, size),
+                    Image.Resampling.LANCZOS,
+                )
+            else:
+                self._cache[cache_key] = create_fallback_marker(size, "#2A9D6E")
+        return self._cache[cache_key]
+
     def get_colored_marker_bytes(self, color: str, size: int) -> bytes:
         """
         Get colored marker as PNG bytes for embedding in HTML.
@@ -238,6 +255,13 @@ class MarkerColorizer:
             PNG image data as bytes
         """
         marker = self.get_colored_marker(color, size)
+        buffer = io.BytesIO()
+        marker.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def get_plain_marker_bytes(self, size: int) -> bytes:
+        """Get the unframed marker/logo as PNG bytes."""
+        marker = self.get_plain_marker(size)
         buffer = io.BytesIO()
         marker.save(buffer, format="PNG")
         return buffer.getvalue()

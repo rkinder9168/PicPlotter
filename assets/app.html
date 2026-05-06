@@ -384,6 +384,28 @@
             cursor: not-allowed;
         }
 
+        .segmented-toggle {
+            display: inline-flex;
+            padding: 2px;
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            background: #0c1412;
+            gap: 2px;
+        }
+
+        .segmented-toggle button {
+            border: none;
+            border-radius: 6px;
+            background: transparent;
+            min-width: 64px;
+        }
+
+        .segmented-toggle button.active {
+            background: var(--accent);
+            color: #0b0f0d;
+            font-weight: 700;
+        }
+
         #file-list {
             border: 1px solid var(--panel-border);
             border-radius: 10px;
@@ -476,6 +498,20 @@
             justify-content: center;
         }
 
+        .group-dot.page-mode {
+            border-style: solid;
+            background: #17231f;
+            color: var(--accent);
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .group-dot.page-mode::after {
+            display: none;
+        }
+
         .file-item.has-gps {
             color: var(--text);
         }
@@ -545,6 +581,21 @@
         .group-swatch:hover {
             transform: scale(1.06);
             box-shadow: 0 0 0 2px rgba(42, 157, 110, 0.35);
+        }
+
+        .page-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 5px;
+            border: 1px solid var(--panel-border);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            color: var(--accent);
+            background: #17231f;
+            font-size: 12px;
+            font-weight: 700;
         }
 
         .group-name {
@@ -1039,10 +1090,13 @@
                     <div id="side-panels">
                         <div id="groups-panel" class="panel">
                             <div class="panel-header">
-                                <h3>Groups</h3>
+                                <div class="segmented-toggle" id="assignment-mode-toggle" role="group" aria-label="Assignment mode">
+                                    <button id="assignment-mode-group" class="active" type="button">Group</button>
+                                    <button id="assignment-mode-page" type="button">Page</button>
+                                </div>
                                 <div class="actions">
-                                    <button id="delete-group" class="secondary icon-button" title="Delete group">-</button>
-                                    <button id="add-group" class="secondary icon-button" title="Add group">+</button>
+                                    <button id="delete-group" class="secondary icon-button" title="Delete">-</button>
+                                    <button id="add-group" class="secondary icon-button" title="Add">+</button>
                                 </div>
                             </div>
                             <div id="group-hint" class="hint">Assign a group using the dot next to a photo.</div>
@@ -1194,6 +1248,15 @@
             <section id="editor-view" class="view">
                 <div id="editor-shell">
                     <aside id="editor-sidebar">
+                        <div id="editor-page-panel" class="panel" style="gap:10px;display:none;">
+                            <label>Page</label>
+                            <select id="editor-page-select"></select>
+                            <div class="actions mode-toggle">
+                                <button id="editor-page-source-auto" class="secondary">Auto</button>
+                                <button id="editor-page-source-custom" class="secondary">Custom</button>
+                            </div>
+                        </div>
+
                         <div id="editor-photo-panel" class="panel" style="gap:10px;">
                             <div style="display:flex;justify-content:space-between;align-items:center;">
                                 <label>Photos</label>
@@ -1331,7 +1394,11 @@
             groups: [],
             presetColors: [],
             markerImages: {},
-            selectedGroupId: null
+            selectedGroupId: null,
+            assignmentMode: INITIAL_STATE.assignment_mode || "group",
+            pages: [],
+            selectedPageId: "page-1",
+            plainMarkerImage: MARKER_ICON
         };
 
         const fileSelection = {
@@ -1348,6 +1415,8 @@
         const addGroupBtn = document.getElementById("add-group");
         const deleteGroupBtn = document.getElementById("delete-group");
         const groupHintEl = document.getElementById("group-hint");
+        const assignmentModeGroupBtn = document.getElementById("assignment-mode-group");
+        const assignmentModePageBtn = document.getElementById("assignment-mode-page");
         const statusTextEl = document.getElementById("status-text");
         const progressFillEl = document.getElementById("progress-fill");
         const apiKeyInput = document.getElementById("api-key");
@@ -1388,6 +1457,10 @@
         const customImageNameEl = document.getElementById("custom-image-name");
         const customImageSelectBtn = document.getElementById("custom-image-select");
         const editorModePanel = document.getElementById("editor-mode-panel");
+        const editorPagePanel = document.getElementById("editor-page-panel");
+        const editorPageSelect = document.getElementById("editor-page-select");
+        const editorPageSourceAutoBtn = document.getElementById("editor-page-source-auto");
+        const editorPageSourceCustomBtn = document.getElementById("editor-page-source-custom");
         const customAutoplotStatus = document.getElementById("custom-autoplot-status");
         const resetEditorBtn = document.getElementById("reset-editor");
         const groupPickerEl = document.getElementById("group-picker");
@@ -1595,9 +1668,14 @@
             if (!payload || payload.status !== "ok") {
                 return;
             }
+            if (payload.assignment_mode) {
+                state.assignmentMode = payload.assignment_mode;
+            }
             state.groups = payload.groups || [];
             state.presetColors = payload.preset_colors || [];
             state.markerImages = payload.marker_images || {};
+            state.pages = payload.pages || state.pages || [];
+            state.plainMarkerImage = payload.plain_marker_image || state.plainMarkerImage || MARKER_ICON;
             if (state.selectedGroupId && !state.groups.some((group) => group.id === state.selectedGroupId)) {
                 state.selectedGroupId = null;
             }
@@ -1605,10 +1683,22 @@
                 const defaultGroup = state.groups.find((group) => group.id === "default");
                 state.selectedGroupId = defaultGroup ? defaultGroup.id : state.groups[0].id;
             }
+            if (state.selectedPageId && !state.pages.some((page) => page.id === state.selectedPageId)) {
+                state.selectedPageId = null;
+            }
+            if (!state.selectedPageId && state.pages.length) {
+                const defaultPage = state.pages.find((page) => page.id === "page-1");
+                state.selectedPageId = defaultPage ? defaultPage.id : state.pages[0].id;
+            }
+            updateAssignmentModeToggle();
         }
 
         function getGroupById(groupId) {
             return state.groups.find((group) => group.id === groupId);
+        }
+
+        function getPageById(pageId) {
+            return state.pages.find((page) => page.id === pageId);
         }
 
         function getGroupDisplayName(group) {
@@ -1616,6 +1706,29 @@
                 return "";
             }
             return group.display_name || group.name || "";
+        }
+
+        function getPageDisplayName(page) {
+            if (!page) {
+                return "";
+            }
+            return page.display_name || page.name || "";
+        }
+
+        function updateAssignmentModeToggle() {
+            const isPage = state.assignmentMode === "page";
+            if (assignmentModeGroupBtn) {
+                assignmentModeGroupBtn.classList.toggle("active", !isPage);
+            }
+            if (assignmentModePageBtn) {
+                assignmentModePageBtn.classList.toggle("active", isPage);
+            }
+            if (addGroupBtn) {
+                addGroupBtn.title = isPage ? "Add page" : "Add group";
+            }
+            if (deleteGroupBtn) {
+                deleteGroupBtn.title = isPage ? "Delete page" : "Delete group";
+            }
         }
 
         function getPhotoDisplayName(photo) {
@@ -1749,6 +1862,20 @@
                 return;
             }
             const selectedCount = fileSelection.paths.size;
+            if (state.assignmentMode === "page") {
+                if (selectedCount > 0) {
+                    const label = selectedCount === 1 ? "1 photo selected" : `${selectedCount} photos selected`;
+                    groupHintEl.textContent = `${label}. Click the page icon on a selected photo to assign.`;
+                    return;
+                }
+                const selectedPage = getPageById(state.selectedPageId);
+                if (selectedPage) {
+                    groupHintEl.textContent = `Selected: ${getPageDisplayName(selectedPage)}. Use the page icon to assign.`;
+                } else {
+                    groupHintEl.textContent = "Select photos and use the page icon to assign.";
+                }
+                return;
+            }
             if (selectedCount > 0) {
                 const label = selectedCount === 1 ? "1 photo selected" : `${selectedCount} photos selected`;
                 groupHintEl.textContent = `${label}. Click the dot on a selected photo to assign.`;
@@ -1764,6 +1891,10 @@
 
         function renderGroups() {
             if (!groupsListEl) {
+                return;
+            }
+            if (state.assignmentMode === "page") {
+                renderPages();
                 return;
             }
             groupsListEl.innerHTML = "";
@@ -1859,16 +1990,117 @@
             }
         }
 
+        function renderPages() {
+            if (!groupsListEl) {
+                return;
+            }
+            groupsListEl.innerHTML = "";
+            if (!state.pages.length) {
+                updateGroupHint();
+                if (deleteGroupBtn) {
+                    deleteGroupBtn.disabled = true;
+                }
+                return;
+            }
+
+            state.pages.forEach((page, index) => {
+                const item = document.createElement("div");
+                item.className = "group-item";
+                if (page.id === state.selectedPageId) {
+                    item.classList.add("selected");
+                }
+                item.addEventListener("click", () => {
+                    state.selectedPageId = page.id;
+                    renderPages();
+                });
+
+                const icon = document.createElement("div");
+                icon.className = "page-icon";
+                icon.textContent = String(index + 1);
+
+                const name = document.createElement("div");
+                name.className = "group-name";
+                name.textContent = getPageDisplayName(page);
+
+                const renameInput = document.createElement("input");
+                renameInput.type = "text";
+                renameInput.className = "group-rename-input";
+                renameInput.placeholder = "Page Name";
+                renameInput.value = page.name || "";
+                const originalValue = renameInput.value;
+                let skipCommit = false;
+                renameInput.addEventListener("click", (event) => event.stopPropagation());
+                renameInput.addEventListener("keydown", (event) => {
+                    event.stopPropagation();
+                    if (event.key === "Enter") {
+                        event.preventDefault();
+                        renameInput.blur();
+                    }
+                    if (event.key === "Escape") {
+                        event.preventDefault();
+                        skipCommit = true;
+                        renameInput.value = originalValue;
+                        renameInput.blur();
+                    }
+                });
+                renameInput.addEventListener("blur", () => {
+                    if (skipCommit) {
+                        skipCommit = false;
+                        return;
+                    }
+                    const trimmed = renameInput.value.trim();
+                    if (trimmed === originalValue.trim()) {
+                        return;
+                    }
+                    renamePage(page.id, trimmed);
+                });
+
+                const count = document.createElement("div");
+                count.className = "group-count";
+                count.textContent = String(page.count || 0);
+
+                item.appendChild(icon);
+                item.appendChild(name);
+                item.appendChild(renameInput);
+                item.appendChild(count);
+                groupsListEl.appendChild(item);
+            });
+
+            updateGroupHint();
+            if (deleteGroupBtn) {
+                const selected = getPageById(state.selectedPageId);
+                deleteGroupBtn.disabled = !selected || selected.locked;
+            }
+        }
+
         async function refreshGroups() {
             if (!window.pywebview || !window.pywebview.api) {
                 return;
             }
             try {
-                const result = await window.pywebview.api.get_groups();
+                const result = window.pywebview.api.get_assignment_state
+                    ? await window.pywebview.api.get_assignment_state()
+                    : await window.pywebview.api.get_groups();
                 applyGroupPayload(result);
                 renderGroups();
             } catch (err) {
                 // Ignore group refresh errors.
+            }
+        }
+
+        async function setAssignmentMode(mode) {
+            if (!window.pywebview || !window.pywebview.api || state.assignmentMode === mode) {
+                return;
+            }
+            try {
+                const result = await window.pywebview.api.set_assignment_mode(mode);
+                if (result && result.status === "ok") {
+                    applyGroupPayload(result);
+                    renderGroups();
+                    refreshPhotoList();
+                }
+            } catch (err) {
+                // Ignore mode switch errors.
             }
         }
 
@@ -1896,7 +2128,8 @@
         }
 
         function openGroupPicker(filepath, anchorEl) {
-            if (!groupPickerEl || !state.groups.length) {
+            const options = state.assignmentMode === "page" ? state.pages : state.groups;
+            if (!groupPickerEl || !options.length) {
                 return;
             }
             closeGroupPicker();
@@ -1905,18 +2138,29 @@
             const targetPaths = fileSelection.paths.has(filepath)
                 ? getSelectedPhotoPaths()
                 : [filepath];
-            state.groups.forEach((group) => {
+            options.forEach((assignment, index) => {
                 const item = document.createElement("div");
                 item.className = "popup-item";
                 const swatch = document.createElement("div");
-                swatch.className = "popup-swatch";
-                swatch.style.background = group.color === "default" ? "#ffffff" : group.color;
+                if (state.assignmentMode === "page") {
+                    swatch.className = "page-icon";
+                    swatch.textContent = String(index + 1);
+                } else {
+                    swatch.className = "popup-swatch";
+                    swatch.style.background = assignment.color === "default" ? "#ffffff" : assignment.color;
+                }
                 const label = document.createElement("div");
-                label.textContent = getGroupDisplayName(group);
+                label.textContent = state.assignmentMode === "page"
+                    ? getPageDisplayName(assignment)
+                    : getGroupDisplayName(assignment);
                 item.appendChild(swatch);
                 item.appendChild(label);
                 item.addEventListener("click", () => {
-                    assignPhotoGroup(targetPaths, group.id);
+                    if (state.assignmentMode === "page") {
+                        assignPhotoPage(targetPaths, assignment.id);
+                    } else {
+                        assignPhotoGroup(targetPaths, assignment.id);
+                    }
                 });
                 groupPickerEl.appendChild(item);
             });
@@ -1954,6 +2198,30 @@
                     state.photos = result.photos || [];
                     if (result.groups) {
                         state.groups = result.groups || [];
+                    }
+                    renderFileList();
+                    renderGroups();
+                }
+            } catch (err) {
+                // Ignore assignment errors.
+            }
+        }
+
+        async function assignPhotoPage(filepaths, pageId) {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            const targets = Array.isArray(filepaths) ? filepaths.filter(Boolean) : [filepaths];
+            if (!targets.length) {
+                return;
+            }
+            closeGroupPicker();
+            try {
+                const result = await window.pywebview.api.assign_photo_page(targets, pageId);
+                if (result && result.status === "ok") {
+                    state.photos = result.photos || [];
+                    if (result.pages) {
+                        state.pages = result.pages || [];
                     }
                     renderFileList();
                     renderGroups();
@@ -2058,6 +2326,9 @@
         }
 
         async function addGroup() {
+            if (state.assignmentMode === "page") {
+                return addPage();
+            }
             if (!window.pywebview || !window.pywebview.api) {
                 return;
             }
@@ -2076,7 +2347,29 @@
             }
         }
 
+        async function addPage() {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            try {
+                const existingIds = new Set(state.pages.map((page) => page.id));
+                const result = await window.pywebview.api.add_page("");
+                applyGroupPayload(result);
+                const newPage = state.pages.find((page) => !existingIds.has(page.id));
+                if (newPage) {
+                    state.selectedPageId = newPage.id;
+                }
+                renderGroups();
+                refreshPhotoList();
+            } catch (err) {
+                // Ignore add errors.
+            }
+        }
+
         async function deleteGroup() {
+            if (state.assignmentMode === "page") {
+                return deletePage();
+            }
             const selected = getGroupById(state.selectedGroupId);
             if (!selected || selected.locked) {
                 return;
@@ -2094,6 +2387,32 @@
             }
             try {
                 const result = await window.pywebview.api.delete_group(selected.id);
+                applyGroupPayload(result);
+                renderGroups();
+                refreshPhotoList();
+            } catch (err) {
+                // Ignore delete errors.
+            }
+        }
+
+        async function deletePage() {
+            const selected = getPageById(state.selectedPageId);
+            if (!selected || selected.locked) {
+                return;
+            }
+            const ok = await showConfirm({
+                title: "Delete page?",
+                message: `Photos on ${getPageDisplayName(selected)} will move to Page 1.`,
+                acceptLabel: "Delete"
+            });
+            if (!ok) {
+                return;
+            }
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            try {
+                const result = await window.pywebview.api.delete_page(selected.id);
                 applyGroupPayload(result);
                 renderGroups();
                 refreshPhotoList();
@@ -2145,6 +2464,25 @@
                 applyGroupPayload(result);
                 renderGroups();
                 renderFileList();
+            } catch (err) {
+                renderGroups();
+            }
+        }
+
+        async function renamePage(pageId, name) {
+            if (!window.pywebview || !window.pywebview.api) {
+                return;
+            }
+            const trimmed = String(name || "").trim();
+            if (!trimmed) {
+                renderGroups();
+                return;
+            }
+            try {
+                const result = await window.pywebview.api.rename_page(pageId, trimmed);
+                applyGroupPayload(result);
+                renderGroups();
+                refreshPhotoList();
             } catch (err) {
                 renderGroups();
             }
@@ -2249,13 +2587,21 @@
 
                 const groupDot = document.createElement("div");
                 groupDot.className = "group-dot";
-                const groupColor = photo.group_color || "default";
-                const group = getGroupById(photo.group_id);
-                groupDot.style.background = groupColor === "default" ? "#ffffff" : groupColor;
-                groupDot.title = group ? getGroupDisplayName(group) : "Default";
-                if (groupColor === "default") {
-                    groupDot.classList.add("default");
-                    groupDot.textContent = "D";
+                if (state.assignmentMode === "page") {
+                    const page = getPageById(photo.page_id);
+                    const pageIndex = Math.max(0, state.pages.findIndex((item) => item.id === photo.page_id));
+                    groupDot.classList.add("page-mode");
+                    groupDot.textContent = String(pageIndex + 1);
+                    groupDot.title = page ? getPageDisplayName(page) : "Page 1";
+                } else {
+                    const groupColor = photo.group_color || "default";
+                    const group = getGroupById(photo.group_id);
+                    groupDot.style.background = groupColor === "default" ? "#ffffff" : groupColor;
+                    groupDot.title = group ? getGroupDisplayName(group) : "Default";
+                    if (groupColor === "default") {
+                        groupDot.classList.add("default");
+                        groupDot.textContent = "D";
+                    }
                 }
                 groupDot.addEventListener("click", (event) => {
                     event.stopPropagation();
@@ -2605,7 +2951,7 @@
                 const result = await window.pywebview.api.get_photo_list();
                 if (result && result.status === "ok") {
                     state.photos = result.photos || [];
-                    if (!state.groups.length) {
+                    if (!state.groups.length || (state.assignmentMode === "page" && !state.pages.length)) {
                         await refreshGroups();
                     }
                     renderFileList();
@@ -2871,6 +3217,10 @@
 
             try {
                 const payload = buildExportPayload();
+                if (!payload) {
+                    setStatus("No placed photos to deploy.", true);
+                    return;
+                }
                 const result = await window.pywebview.api.deploy_to_web(payload);
 
                 if (result.status === "ok") {
@@ -2927,7 +3277,9 @@
                 return null;
             }
             try {
-                const result = await window.pywebview.api.select_custom_map_image();
+                const result = editor.assignmentMode === "page" && editor.activePageId && window.pywebview.api.select_page_custom_map_image
+                    ? await window.pywebview.api.select_page_custom_map_image(editor.activePageId)
+                    : await window.pywebview.api.select_custom_map_image();
                 if (!result || result.status !== "ok") {
                     return null;
                 }
@@ -2975,6 +3327,14 @@
                 return;
             }
             await refreshGroups();
+            if (result.assignment_mode === "page" || state.assignmentMode === "page") {
+                setView("editor");
+                requestAnimationFrame(() => {
+                    editorLoad(result, null, null);
+                });
+                setStatus("Ready");
+                return;
+            }
             const hasGpsData = (result.photos || []).some((photo) => Boolean(photo.gps));
             let mapMode = MAP_SOURCE_TILES;
             if (!hasGpsData) {
@@ -3124,6 +3484,12 @@
         }
         if (deleteGroupBtn) {
             deleteGroupBtn.addEventListener("click", deleteGroup);
+        }
+        if (assignmentModeGroupBtn) {
+            assignmentModeGroupBtn.addEventListener("click", () => setAssignmentMode("group"));
+        }
+        if (assignmentModePageBtn) {
+            assignmentModePageBtn.addEventListener("click", () => setAssignmentMode("page"));
         }
 
         /* ── Project save/load ─────────────────────────────────── */
@@ -3303,6 +3669,7 @@
         setOauthClientSecretLocked(Boolean(state.oauthClientSecret));
 
         updateButtons();
+        updateAssignmentModeToggle();
         refreshGroups();
         window.addEventListener("pywebviewready", () => {
             refreshGroups();
@@ -3312,7 +3679,12 @@
 
         /* Editor logic */
         const editor = {
+            assignmentMode: "group",
             photos: [],
+            pages: [],
+            pageStates: {},
+            activePageId: null,
+            plainMarkerImage: MARKER_ICON,
             markerSize: state.markerSize,
             heading: state.heading,
             tileHeading: state.heading,
@@ -3386,6 +3758,16 @@
 
         function setEditorModeUI() {
             const customMode = isCustomMode();
+            const pageMode = editor.assignmentMode === "page";
+            if (editorPagePanel) {
+                editorPagePanel.style.display = pageMode ? "flex" : "none";
+            }
+            if (editorPageSourceAutoBtn) {
+                editorPageSourceAutoBtn.classList.toggle("active", !customMode);
+            }
+            if (editorPageSourceCustomBtn) {
+                editorPageSourceCustomBtn.classList.toggle("active", customMode);
+            }
             if (rotationPanel) {
                 rotationPanel.style.display = "flex";
             }
@@ -4431,7 +4813,9 @@
                 }
                 const photo = editor.photos[index];
                 const color = photo && photo.group_color ? photo.group_color : "default";
-                const icon = state.markerImages[color] || MARKER_ICON;
+                const icon = editor.assignmentMode === "page"
+                    ? (editor.plainMarkerImage || state.plainMarkerImage || MARKER_ICON)
+                    : (state.markerImages[color] || MARKER_ICON);
                 marker.style.width = `${editor.markerSize}px`;
                 marker.style.height = `${editor.markerSize}px`;
                 marker.style.backgroundImage = `url(${icon})`;
@@ -4998,6 +5382,215 @@
             }
         }
 
+        function normalizeEditorPhoto(photo) {
+            return {
+                filepath: photo.filepath,
+                filename: photo.filename,
+                display_name: photo.display_name || photo.filename,
+                custom_name: photo.custom_name || "",
+                note: photo.note || "",
+                gps: photo.gps ? { ...photo.gps } : null,
+                originalGps: photo.gps ? { ...photo.gps } : null,
+                pixel: photo.pixel ? { ...photo.pixel } : null,
+                calibrationPixel: photo.pixel ? { ...photo.pixel } : null,
+                autoPixel: null,
+                autoCommitted: false,
+                has_gps: Boolean(photo.has_gps),
+                has_override: Boolean(photo.has_override),
+                group_id: photo.group_id || "default",
+                group_color: photo.group_color || "default",
+                page_id: photo.page_id || "page-1",
+                page_name: photo.page_name || "Page 1"
+            };
+        }
+
+        function clonePhotosForPageState(photos) {
+            return (photos || []).map((photo) => ({
+                ...photo,
+                gps: photo.gps ? { ...photo.gps } : null,
+                originalGps: photo.originalGps ? { ...photo.originalGps } : null,
+                pixel: photo.pixel ? { ...photo.pixel } : null,
+                calibrationPixel: photo.calibrationPixel ? { ...photo.calibrationPixel } : null,
+                autoPixel: photo.autoPixel ? { ...photo.autoPixel } : null
+            }));
+        }
+
+        function customMapFromPayload(page) {
+            return {
+                path: page.custom_map_path || null,
+                uri: page.custom_map_uri || page.custom_map_file_uri || null,
+                fileUri: page.custom_map_file_uri || null,
+                width: 0,
+                height: 0,
+                ready: false,
+                name: page.custom_map_path ? getFilenameFromPath(page.custom_map_path) : ""
+            };
+        }
+
+        function populateEditorPageSelect() {
+            if (!editorPageSelect) {
+                return;
+            }
+            editorPageSelect.innerHTML = "";
+            editor.pages.forEach((page) => {
+                const option = document.createElement("option");
+                option.value = page.id;
+                option.textContent = page.name || "Page";
+                editorPageSelect.appendChild(option);
+            });
+            if (editor.activePageId) {
+                editorPageSelect.value = editor.activePageId;
+            }
+        }
+
+        function captureActivePageState() {
+            if (editor.assignmentMode !== "page" || !editor.activePageId || !editor.pageStates[editor.activePageId]) {
+                return;
+            }
+            editor.pageStates[editor.activePageId] = {
+                ...editor.pageStates[editor.activePageId],
+                photos: clonePhotosForPageState(editor.photos),
+                markerSize: editor.markerSize,
+                mapMode: editor.mapMode,
+                mode: editor.mode,
+                modeLocked: editor.modeLocked,
+                tileHeading: editor.tileHeading,
+                customHeading: editor.customHeading,
+                hasTileView: editor.mapMode === MAP_SOURCE_TILES,
+                hasCustomView: editor.mapMode === MAP_SOURCE_CUSTOM,
+                zoom: editor.zoom,
+                center: editor.center ? { ...editor.center } : null,
+                customMap: { ...editor.customMap },
+                autoplotEnabled: editor.autoplotEnabled
+            };
+        }
+
+        function applyEditorPageState(pageId) {
+            const pageState = editor.pageStates[pageId];
+            if (!pageState) {
+                return;
+            }
+            editor.activePageId = pageId;
+            populateEditorPageSelect();
+            editor.photos = clonePhotosForPageState(pageState.photos);
+            editor.markerSize = pageState.markerSize || state.markerSize || editor.markerSize;
+            editor.mapMode = pageState.mapMode || MAP_SOURCE_TILES;
+            editor.tileHeading = Number.isFinite(Number(pageState.tileHeading)) ? Number(pageState.tileHeading) : 0;
+            editor.customHeading = Number.isFinite(Number(pageState.customHeading)) ? Number(pageState.customHeading) : editor.tileHeading;
+            editor.heading = editor.mapMode === MAP_SOURCE_CUSTOM ? editor.customHeading : editor.tileHeading;
+            editor.zoom = pageState.zoom || (editor.mapMode === MAP_SOURCE_CUSTOM ? 1 : 19);
+            editor.center = pageState.center
+                ? { ...pageState.center }
+                : (editor.mapMode === MAP_SOURCE_CUSTOM ? { x: 0, y: 0 } : { lat: 0, lng: 0 });
+            editor.mode = pageState.mode || MODE_PLOT;
+            editor.modeLocked = Boolean(pageState.modeLocked);
+            editor.autoplotEnabled = pageState.autoplotEnabled !== false;
+            editor.autoplotTransform = null;
+            editor.autoplotError = "";
+            editor.customMap = { ...(pageState.customMap || {
+                path: null,
+                uri: null,
+                fileUri: null,
+                width: 0,
+                height: 0,
+                ready: false,
+                name: ""
+            }) };
+
+            const nextTarget = getNextTargetIndex();
+            if (nextTarget !== null && nextTarget !== undefined) {
+                editor.selectedIndex = nextTarget;
+            } else {
+                editor.selectedIndex = editor.photos.length ? 0 : null;
+            }
+
+            markerSizeInput.value = editor.markerSize;
+            markerSizeValue.textContent = `${editor.markerSize}px`;
+            rotationInput.value = editor.heading;
+            rotationValue.textContent = `${editor.heading}deg`;
+            setEditorModeUI();
+            createMarkers();
+            updateModeUI();
+            updateMarkerInteractivity();
+            renderPhotoList();
+
+            if (editor.mapMode === MAP_SOURCE_CUSTOM) {
+                setEditorStatus("Loading custom image...");
+                loadCustomMap().then((loaded) => {
+                    if (!loaded) {
+                        setEditorStatus("Custom image failed to load.", true);
+                        scheduleEditorRender();
+                        return;
+                    }
+                    updateAutoplot();
+                    if (getPlacedPhotos().length) {
+                        fitToMarkers();
+                    } else {
+                        fitToCustomImage();
+                        scheduleEditorRender();
+                    }
+                    setEditorStatus("Custom image ready.");
+                });
+                return;
+            }
+
+            const placedPhotos = getPlacedPhotos();
+            if (placedPhotos.length) {
+                fitToMarkers();
+            } else {
+                editor.zoom = editor.zoom || 3;
+                editor.center = editor.center && Number.isFinite(editor.center.lat)
+                    ? editor.center
+                    : { lat: 0, lng: 0 };
+                scheduleEditorRender();
+            }
+            setEditorStatus(placedPhotos.length ? "Map ready." : "Select a photo and click the map to place a marker.");
+        }
+
+        async function switchEditorPage(pageId) {
+            if (!pageId || pageId === editor.activePageId) {
+                return;
+            }
+            captureActivePageState();
+            markerLayer.innerHTML = "";
+            tileLayer.innerHTML = "";
+            applyEditorPageState(pageId);
+            scheduleOverrideSave();
+        }
+
+        async function setCurrentPageMapSource(mapSource) {
+            if (editor.assignmentMode !== "page" || !editor.activePageId) {
+                return;
+            }
+            captureActivePageState();
+            const pageState = editor.pageStates[editor.activePageId];
+            if (!pageState) {
+                return;
+            }
+            if (mapSource === MAP_SOURCE_CUSTOM) {
+                if (!pageState.customMap || !pageState.customMap.path) {
+                    const selection = await requestCustomMapImage();
+                    if (!selection) {
+                        return;
+                    }
+                    pageState.customMap = {
+                        path: selection.path,
+                        uri: selection.uri,
+                        fileUri: selection.fileUri || null,
+                        width: 0,
+                        height: 0,
+                        ready: false,
+                        name: selection.name || getFilenameFromPath(selection.path)
+                    };
+                }
+                pageState.mapMode = MAP_SOURCE_CUSTOM;
+            } else {
+                pageState.mapMode = MAP_SOURCE_TILES;
+            }
+            applyEditorPageState(editor.activePageId);
+            scheduleOverrideSave();
+        }
+
         function computeExportSize() {
             const rect = editorViewport.getBoundingClientRect();
             if (!rect.width || !rect.height) {
@@ -5010,7 +5603,145 @@
             return { width: Math.round(EXPORT_MAX_DIM * aspect), height: EXPORT_MAX_DIM };
         }
 
+        function getPagePixelForExport(pageState, photo) {
+            if (!photo || pageState.mapMode !== MAP_SOURCE_CUSTOM) {
+                return null;
+            }
+            if (pageState.mode === MODE_PLOT && photo.has_gps) {
+                return (isValidPixel(photo.calibrationPixel) && photo.calibrationPixel)
+                    || (isValidPixel(photo.pixel) && photo.pixel)
+                    || (isValidPixel(photo.autoPixel) && photo.autoPixel)
+                    || null;
+            }
+            return isValidPixel(photo.pixel) ? photo.pixel : null;
+        }
+
+        function buildPageExportPayloads() {
+            captureActivePageState();
+            const viewport = getViewportSize();
+            const size = computeExportSize();
+            return editor.pages.map((page) => {
+                const pageState = editor.pageStates[page.id];
+                if (!pageState) {
+                    return null;
+                }
+                if (pageState.mapMode === MAP_SOURCE_CUSTOM) {
+                    const exportPhotos = pageState.photos.filter((photo) => Boolean(getPagePixelForExport(pageState, photo)));
+                    return {
+                        id: page.id,
+                        name: page.name || "Page",
+                        map_source: MAP_SOURCE_CUSTOM,
+                        custom_image_path: pageState.customMap && pageState.customMap.path,
+                        custom_map_path: pageState.customMap && pageState.customMap.path,
+                        marker_size: pageState.markerSize || editor.markerSize,
+                        viewport_width: viewport.width,
+                        viewport_height: viewport.height,
+                        custom_zoom: pageState.zoom,
+                        heading: pageState.customHeading || pageState.heading || 0,
+                        custom_markers: exportPhotos.map((photo) => {
+                            const pixel = getPagePixelForExport(pageState, photo);
+                            return {
+                                filepath: photo.filepath,
+                                x: pixel.x,
+                                y: pixel.y
+                            };
+                        })
+                    };
+                }
+                const exportPhotos = pageState.photos.filter((photo) => isValidGps(photo.gps));
+                return {
+                    id: page.id,
+                    name: page.name || "Page",
+                    map_source: MAP_SOURCE_TILES,
+                    map_state: {
+                        center: pageState.hasTileView && pageState.center && Number.isFinite(pageState.center.lat)
+                            ? { lat: pageState.center.lat, lng: pageState.center.lng }
+                            : (exportPhotos[0] ? { lat: exportPhotos[0].gps.latitude, lng: exportPhotos[0].gps.longitude } : { lat: 0, lng: 0 }),
+                        zoom: pageState.zoom || 19,
+                        heading: pageState.tileHeading || 0,
+                        width: size.width,
+                        height: size.height
+                    },
+                    marker_size: pageState.markerSize || editor.markerSize,
+                    viewport_width: viewport.width,
+                    viewport_height: viewport.height,
+                    heading: pageState.tileHeading || 0,
+                    markers: exportPhotos.map((photo) => ({
+                        filepath: photo.filepath,
+                        latitude: photo.gps.latitude,
+                        longitude: photo.gps.longitude,
+                        altitude: photo.gps.altitude || null
+                    }))
+                };
+            }).filter((page) => {
+                if (!page) {
+                    return false;
+                }
+                return page.map_source === MAP_SOURCE_CUSTOM
+                    ? page.custom_markers.length > 0
+                    : page.markers.length > 0;
+            });
+        }
+
+        function buildPageEditorStatesPayload() {
+            captureActivePageState();
+            const result = {};
+            Object.entries(editor.pageStates).forEach(([pageId, pageState]) => {
+                const customMarkers = (pageState.photos || [])
+                    .filter((photo) => isValidPixel(photo.pixel))
+                    .map((photo) => ({
+                        filepath: photo.filepath,
+                        x: photo.pixel.x,
+                        y: photo.pixel.y
+                    }));
+                const gpsMarkers = (pageState.photos || [])
+                    .filter((photo) => isValidGps(photo.gps) && (!photo.has_gps || photo.has_override))
+                    .map((photo) => ({
+                        filepath: photo.filepath,
+                        latitude: photo.gps.latitude,
+                        longitude: photo.gps.longitude,
+                        altitude: photo.gps.altitude || null
+                    }));
+                result[pageId] = {
+                    map_source: pageState.mapMode || MAP_SOURCE_TILES,
+                    heading: pageState.tileHeading || 0,
+                    custom_heading: pageState.customHeading || 0,
+                    custom_map_path: pageState.customMap && pageState.customMap.path,
+                    custom_autoplot_enabled: pageState.autoplotEnabled !== false,
+                    markers: gpsMarkers,
+                    custom_markers: customMarkers,
+                    tile_view: pageState.mapMode === MAP_SOURCE_TILES ? {
+                        center: pageState.center,
+                        zoom: pageState.zoom
+                    } : {},
+                    custom_view: pageState.mapMode === MAP_SOURCE_CUSTOM ? {
+                        center: pageState.center,
+                        zoom: pageState.zoom
+                    } : {}
+                };
+            });
+            return result;
+        }
+
         function buildExportPayload() {
+            if (editor.assignmentMode === "page") {
+                const pages = buildPageExportPayloads();
+                if (!pages.length) {
+                    return null;
+                }
+                return {
+                    assignment_mode: "page",
+                    pages,
+                    page_editor_states: buildPageEditorStatesPayload(),
+                    marker_size: editor.markerSize,
+                    project_name: projectNameInput.value.trim() || "Photo Map",
+                    proposal_link: proposalLinkInput.value.trim(),
+                    client_name: clientNameInput ? clientNameInput.value.trim() : "",
+                    client_company: clientCompanyInput ? clientCompanyInput.value.trim() : "",
+                    client_address: clientAddressInput ? clientAddressInput.value.trim() : "",
+                    compression_quality: Number(qualityInput.value)
+                };
+            }
             const exportPhotos = getExportPhotos();
             if (!exportPhotos.length) {
                 return null;
@@ -5095,7 +5826,7 @@
             }
             exportBtn.disabled = true;
             try {
-                const unplacedNonGps = getUnplacedNonGpsPhotos();
+                const unplacedNonGps = editor.assignmentMode === "page" ? [] : getUnplacedNonGpsPhotos();
                 if (unplacedNonGps.length) {
                     const ok = await showConfirm({
                         title: "Unplaced photos",
@@ -5148,6 +5879,14 @@
         }
 
         window.getEditorState = function() {
+            if (editor.assignmentMode === "page") {
+                return {
+                    assignment_mode: "page",
+                    marker_size: editor.markerSize,
+                    page_editor_states: buildPageEditorStatesPayload(),
+                    map_source: editor.mapMode
+                };
+            }
             const placedPhotos = getPlacedPhotos();
             const adjustPlacedPhotos = getAdjustPlacedPhotos();
             const payload = {
@@ -5176,24 +5915,61 @@
             return payload;
         };
 
-        function editorLoad(payload, mapMode, customSelection) {
-            editor.photos = (payload.photos || []).map((photo) => ({
-                filepath: photo.filepath,
-                filename: photo.filename,
-                display_name: photo.display_name || photo.filename,
-                custom_name: photo.custom_name || "",
-                note: photo.note || "",
-                gps: photo.gps ? { ...photo.gps } : null,
-                originalGps: photo.gps ? { ...photo.gps } : null,
-                pixel: photo.pixel ? { ...photo.pixel } : null,
-                calibrationPixel: photo.pixel ? { ...photo.pixel } : null,
-                autoPixel: null,
-                autoCommitted: false,
-                has_gps: Boolean(photo.has_gps),
-                has_override: Boolean(photo.has_override),
-                group_id: photo.group_id || "default",
-                group_color: photo.group_color || "default"
+        function editorLoadPageMode(payload) {
+            editor.assignmentMode = "page";
+            editor.pages = (payload.pages || []).map((page) => ({
+                id: page.id,
+                name: page.name || page.display_name || "Page"
             }));
+            editor.pageStates = {};
+            editor.plainMarkerImage = payload.plain_marker_image || state.plainMarkerImage || MARKER_ICON;
+            editor.pages.forEach((page) => {
+                const sourcePage = (payload.pages || []).find((item) => item.id === page.id) || {};
+                const mapSource = sourcePage.map_source || MAP_SOURCE_TILES;
+                const tileView = sourcePage.tile_view || {};
+                const customView = sourcePage.custom_view || {};
+                const center = mapSource === MAP_SOURCE_CUSTOM
+                    ? ((customView && customView.center) || { x: 0, y: 0 })
+                    : ((tileView && tileView.center) || null);
+                editor.pageStates[page.id] = {
+                    id: page.id,
+                    name: page.name,
+                    photos: (sourcePage.photos || []).map(normalizeEditorPhoto),
+                    markerSize: sourcePage.marker_size || payload.marker_size || state.markerSize || editor.markerSize,
+                    mapMode: mapSource,
+                    mode: MODE_PLOT,
+                    modeLocked: false,
+                    tileHeading: Number(sourcePage.heading) || 0,
+                    customHeading: Number(sourcePage.custom_heading) || Number(sourcePage.heading) || 0,
+                    hasTileView: Boolean(tileView && tileView.center),
+                    hasCustomView: Boolean(customView && customView.center),
+                    zoom: mapSource === MAP_SOURCE_CUSTOM
+                        ? ((customView && customView.zoom) || 1)
+                        : ((tileView && tileView.zoom) || 19),
+                    center: center || { lat: 0, lng: 0 },
+                    customMap: customMapFromPayload(sourcePage),
+                    autoplotEnabled: sourcePage.custom_autoplot_enabled !== false
+                };
+            });
+            editor.activePageId = state.selectedPageId && editor.pageStates[state.selectedPageId]
+                ? state.selectedPageId
+                : (editor.pages[0] ? editor.pages[0].id : null);
+            populateEditorPageSelect();
+            if (editor.activePageId) {
+                applyEditorPageState(editor.activePageId);
+            }
+        }
+
+        function editorLoad(payload, mapMode, customSelection) {
+            if (payload.assignment_mode === "page") {
+                editorLoadPageMode(payload);
+                return;
+            }
+            editor.assignmentMode = "group";
+            editor.pages = [];
+            editor.pageStates = {};
+            editor.activePageId = null;
+            editor.photos = (payload.photos || []).map(normalizeEditorPhoto);
             editor.markerSize = payload.marker_size || editor.markerSize;
             editor.mapMode = mapMode || MAP_SOURCE_TILES;
             const payloadHeading = Number(payload.heading);
@@ -5358,6 +6134,17 @@
         exportBtn.addEventListener("click", exportHtml);
         if (customImageSelectBtn) {
             customImageSelectBtn.addEventListener("click", changeCustomImage);
+        }
+        if (editorPageSelect) {
+            editorPageSelect.addEventListener("change", (event) => {
+                switchEditorPage(event.target.value);
+            });
+        }
+        if (editorPageSourceAutoBtn) {
+            editorPageSourceAutoBtn.addEventListener("click", () => setCurrentPageMapSource(MAP_SOURCE_TILES));
+        }
+        if (editorPageSourceCustomBtn) {
+            editorPageSourceCustomBtn.addEventListener("click", () => setCurrentPageMapSource(MAP_SOURCE_CUSTOM));
         }
         document.getElementById("close-editor").addEventListener("click", closeEditor);
         if (resetEditorBtn) {

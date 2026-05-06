@@ -373,6 +373,637 @@ class HTMLMapGenerator:
 
         return output_path
 
+    def generate_multi_page_html(
+        self,
+        pages: List[Dict[str, Any]],
+        output_path: Optional[str] = None,
+        return_content: bool = False,
+    ) -> str:
+        """
+        Generate a self-contained multi-page interactive HTML deliverable.
+
+        Each page dict must include a name, background image data or path,
+        photos, and marker_pixels matching those photos.
+        """
+        if not pages:
+            raise ValueError("At least one page is required")
+        if not return_content and not output_path:
+            raise ValueError("output_path is required unless return_content=True")
+
+        page_data: List[Dict[str, Any]] = []
+        for page_index, page in enumerate(pages):
+            photos = page.get("photos") or []
+            marker_pixels = page.get("marker_pixels") or []
+            if len(marker_pixels) != len(photos):
+                raise ValueError("marker_pixels length must match photos")
+
+            aerial_src, image_width, image_height = self._page_aerial_src(page)
+            photos_data: List[Dict[str, str]] = []
+            markers_data: List[Dict[str, float]] = []
+            legend_data: List[Dict[str, str]] = []
+
+            for photo_index, photo in enumerate(photos):
+                photo_src = self._photo_src(photo)
+                display_name = (
+                    photo.get("custom_name")
+                    or photo.get("display_name")
+                    or photo.get("filename")
+                    or f"Photo {photo_index + 1}"
+                )
+                note = photo.get("note") or ""
+                pixel = marker_pixels[photo_index]
+                photos_data.append({
+                    "src": photo_src,
+                    "filename": str(display_name),
+                    "note": str(note),
+                })
+                markers_data.append({
+                    "x": float(pixel.x),
+                    "y": float(pixel.y),
+                    "index": photo_index,
+                    "number": photo_index + 1,
+                })
+                legend_data.append({
+                    "number": str(photo_index + 1),
+                    "label": str(display_name),
+                })
+
+            page_data.append({
+                "id": str(page.get("id") or f"page-{page_index + 1}"),
+                "name": str(page.get("name") or f"Page {page_index + 1}"),
+                "aerialSrc": aerial_src,
+                "width": int(image_width),
+                "height": int(image_height),
+                "markerSize": int(page.get("marker_size") or self.marker_size),
+                "photos": photos_data,
+                "markers": markers_data,
+                "legend": legend_data,
+            })
+
+        marker_bytes = get_colorizer().get_plain_marker_bytes(self.marker_asset_size)
+        marker_src = f"data:image/png;base64,{base64.b64encode(marker_bytes).decode('utf-8')}"
+        html_content = self._generate_multi_page_html(
+            pages_json=json.dumps(page_data),
+            plain_marker_src=marker_src,
+        )
+
+        if return_content:
+            return html_content
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        return output_path
+
+    def _page_aerial_src(self, page: Dict[str, Any]) -> tuple[str, int, int]:
+        aerial_data = page.get("aerial_image_bytes")
+        aerial_path = page.get("aerial_image_path")
+        if aerial_data is None:
+            if not aerial_path:
+                raise ValueError("Page background image is required")
+            with open(aerial_path, "rb") as f:
+                aerial_data = f.read()
+            mime_type = self._get_mime_type(str(aerial_path))
+            with Image.open(aerial_path) as img:
+                image_width, image_height = img.size
+        else:
+            mime_type = page.get("aerial_image_mime") or "image/png"
+            image_size = page.get("aerial_image_size")
+            if image_size:
+                image_width, image_height = image_size
+            else:
+                with Image.open(io.BytesIO(aerial_data)) as img:
+                    image_width, image_height = img.size
+        aerial_b64 = base64.b64encode(aerial_data).decode("utf-8")
+        return f"data:{mime_type};base64,{aerial_b64}", int(image_width), int(image_height)
+
+    def _photo_src(self, photo: Dict[str, Any]) -> str:
+        if "image_url" in photo:
+            return str(photo["image_url"])
+        photo_b64 = base64.b64encode(photo["image_data"]).decode("utf-8")
+        return f"data:image/jpeg;base64,{photo_b64}"
+
+    def _generate_multi_page_html(
+        self,
+        pages_json: str,
+        plain_marker_src: str,
+    ) -> str:
+        """Generate the complete multi-page HTML document."""
+        marker_font_size = max(12, int(self.marker_size * 0.29))
+        logo_src = self._get_logo_image_src()
+        logo_html = (
+            f'<img id="logo" src="{logo_src}" alt="Company logo">'
+            if logo_src else ""
+        )
+        project_label = html.escape(self.project_name)
+        safe_marker_src = html.escape(plain_marker_src, quote=True)
+
+        return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{project_label}</title>
+    <style>
+        * {{
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }}
+        :root {{
+            --sidebar-width: 260px;
+            --marker-size: {self.marker_size}px;
+            --marker-font-size: {marker_font_size}px;
+            --plain-marker-image: url('{safe_marker_src}');
+            --sidebar-border: #e3e1da;
+            --sidebar-text: #1b1b1b;
+        }}
+        body {{
+            overflow: hidden;
+            background: #151515;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: var(--sidebar-text);
+        }}
+        #layout {{
+            display: grid;
+            grid-template-columns: var(--sidebar-width) 1fr;
+            width: 100vw;
+            height: 100vh;
+        }}
+        #sidebar {{
+            background: #ffffff;
+            border-right: 1px solid var(--sidebar-border);
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            overflow-y: auto;
+        }}
+        #logo {{
+            max-width: 210px;
+            max-height: {self.LOGO_MAX_HEIGHT}px;
+            width: auto;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }}
+        #project-title {{
+            font-size: 16px;
+            font-weight: 700;
+            text-align: center;
+        }}
+        #page-nav {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }}
+        .page-nav-button {{
+            border: 1px solid var(--sidebar-border);
+            background: #f6f6f6;
+            color: #1b1b1b;
+            border-radius: 6px;
+            padding: 8px 10px;
+            min-height: 40px;
+            cursor: pointer;
+            font-size: 12px;
+            flex: 1 1 100px;
+        }}
+        .page-nav-button.active {{
+            background: #0c1412;
+            color: #ffffff;
+            border-color: #0c1412;
+        }}
+        #page-legend {{
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: auto;
+            border-top: 1px solid var(--sidebar-border);
+            padding-top: 12px;
+        }}
+        .page-legend-heading {{
+            font-size: 15px;
+            font-weight: 700;
+            text-align: center;
+        }}
+        .page-legend-row {{
+            display: grid;
+            grid-template-columns: 28px 1fr;
+            align-items: center;
+            gap: 8px;
+            min-height: 32px;
+            font-size: 13px;
+        }}
+        .page-legend-number {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            background: #0c1412;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 12px;
+        }}
+        #content, #viewport {{
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+        }}
+        #map-container {{
+            position: absolute;
+            cursor: grab;
+            transform-origin: 0 0;
+        }}
+        #map-container:active {{
+            cursor: grabbing;
+        }}
+        #aerial-image {{
+            width: 100%;
+            height: 100%;
+            display: block;
+            user-select: none;
+            -webkit-user-drag: none;
+        }}
+        .marker {{
+            position: absolute;
+            width: var(--marker-size);
+            height: var(--marker-size);
+            margin-left: calc(var(--marker-size) / -2);
+            margin-top: calc(var(--marker-size) / -2);
+            background-image: var(--plain-marker-image);
+            background-size: contain;
+            background-repeat: no-repeat;
+            cursor: pointer;
+            border: none;
+            border-radius: 0;
+            z-index: 10;
+        }}
+        .marker:hover {{
+            transform: scale(1.18);
+            z-index: 20;
+        }}
+        .marker-number {{
+            position: absolute;
+            right: 4%;
+            bottom: 4%;
+            min-width: 1em;
+            padding: 0.15em 0.35em;
+            border-radius: 4px;
+            border: 1px solid rgba(0, 0, 0, 0.25);
+            background: #ffffff;
+            color: #111111;
+            font-size: var(--marker-font-size);
+            font-weight: 700;
+            line-height: 1;
+            text-align: center;
+            pointer-events: none;
+        }}
+        #controls {{
+            display: flex;
+            gap: 8px;
+        }}
+        .control-btn {{
+            flex: 1;
+            border: 1px solid var(--sidebar-border);
+            background: #ffffff;
+            color: #1b1b1b;
+            border-radius: 6px;
+            padding: 8px 10px;
+            min-height: 40px;
+            cursor: pointer;
+        }}
+        #lightbox {{
+            display: none;
+            position: absolute;
+            inset: 0;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.94);
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            padding: 24px;
+        }}
+        #lightbox.active {{
+            display: flex;
+        }}
+        #lightbox-img {{
+            max-width: 94%;
+            max-height: 82%;
+            object-fit: contain;
+        }}
+        #lightbox-title, #lightbox-index, #lightbox-note {{
+            color: #ffffff;
+            margin-top: 10px;
+            text-align: center;
+            max-width: 90%;
+            white-space: pre-wrap;
+        }}
+        #lightbox-title {{
+            font-weight: 700;
+        }}
+        #lightbox-index, #lightbox-note {{
+            font-size: 13px;
+            opacity: 0.85;
+        }}
+        #lightbox-close {{
+            position: absolute;
+            top: 16px;
+            right: 22px;
+            width: 44px;
+            height: 44px;
+            border: none;
+            background: transparent;
+            color: #ffffff;
+            font-size: 38px;
+            cursor: pointer;
+        }}
+        #lightbox-nav {{
+            position: absolute;
+            bottom: 20px;
+            display: flex;
+            gap: 16px;
+        }}
+        .nav-btn {{
+            border: none;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+            padding: 10px 18px;
+            min-height: 44px;
+            cursor: pointer;
+        }}
+        @media (max-width: 820px) {{
+            :root {{
+                --sidebar-width: 100vw;
+                --marker-size: clamp(52px, 15vw, {self.marker_size}px);
+            }}
+            #layout {{
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr;
+            }}
+            #sidebar {{
+                max-height: 36vh;
+                border-right: none;
+                border-bottom: 1px solid var(--sidebar-border);
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div id="layout">
+        <aside id="sidebar">
+            {logo_html}
+            <div id="project-title">{project_label}</div>
+            <div id="page-nav" aria-label="Pages"></div>
+            <div id="controls">
+                <button class="control-btn" id="zoom-in">Zoom +</button>
+                <button class="control-btn" id="zoom-out">Zoom -</button>
+                <button class="control-btn" id="fit-view">Fit</button>
+            </div>
+            <div id="page-legend"></div>
+        </aside>
+        <main id="content">
+            <div id="viewport">
+                <div id="map-container">
+                    <img id="aerial-image" alt="Page background" draggable="false">
+                    <div id="marker-layer"></div>
+                </div>
+            </div>
+            <div id="lightbox" role="dialog" aria-modal="true" aria-hidden="true">
+                <button id="lightbox-close" type="button" aria-label="Close photo">&times;</button>
+                <img id="lightbox-img" src="" alt="">
+                <div id="lightbox-title"></div>
+                <div id="lightbox-index"></div>
+                <div id="lightbox-note"></div>
+                <div id="lightbox-nav">
+                    <button class="nav-btn" id="prev-btn" type="button">&larr; Previous</button>
+                    <button class="nav-btn" id="next-btn" type="button">Next &rarr;</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const pageData = {pages_json};
+        let activePageIndex = 0;
+        let currentPhotoIndex = -1;
+        let scale = 1;
+        let translateX = 0;
+        let translateY = 0;
+        let isPanning = false;
+        let startX = 0;
+        let startY = 0;
+
+        const pageNav = document.getElementById('page-nav');
+        const pageLegend = document.getElementById('page-legend');
+        const viewport = document.getElementById('viewport');
+        const container = document.getElementById('map-container');
+        const aerialImage = document.getElementById('aerial-image');
+        const markerLayer = document.getElementById('marker-layer');
+        const lightbox = document.getElementById('lightbox');
+        const lightboxImg = document.getElementById('lightbox-img');
+        const lightboxTitle = document.getElementById('lightbox-title');
+        const lightboxIndex = document.getElementById('lightbox-index');
+        const lightboxNote = document.getElementById('lightbox-note');
+        const closeBtn = document.getElementById('lightbox-close');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+
+        function activePage() {{
+            return pageData[activePageIndex] || pageData[0];
+        }}
+
+        function updateTransform() {{
+            container.style.transform = `translate(${{translateX}}px, ${{translateY}}px) scale(${{scale}})`;
+        }}
+
+        function fitToViewport() {{
+            const page = activePage();
+            const vw = viewport.clientWidth || 1;
+            const vh = viewport.clientHeight || 1;
+            scale = Math.min(vw / page.width, vh / page.height) * 0.95;
+            translateX = (vw - page.width * scale) / 2;
+            translateY = (vh - page.height * scale) / 2;
+            updateTransform();
+        }}
+
+        function renderPageNav() {{
+            pageNav.innerHTML = '';
+            pageData.forEach((page, index) => {{
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'page-nav-button';
+                button.dataset.pageId = page.id;
+                button.textContent = page.name;
+                button.classList.toggle('active', index === activePageIndex);
+                button.addEventListener('click', () => setActivePage(index));
+                pageNav.appendChild(button);
+            }});
+        }}
+
+        function renderLegend() {{
+            const page = activePage();
+            pageLegend.innerHTML = '';
+            const heading = document.createElement('div');
+            heading.className = 'page-legend-heading';
+            heading.textContent = page.name;
+            pageLegend.appendChild(heading);
+            page.legend.forEach((item) => {{
+                const row = document.createElement('div');
+                row.className = 'page-legend-row';
+                const number = document.createElement('span');
+                number.className = 'page-legend-number';
+                number.textContent = item.number;
+                const label = document.createElement('span');
+                label.textContent = item.label;
+                row.appendChild(number);
+                row.appendChild(label);
+                pageLegend.appendChild(row);
+            }});
+        }}
+
+        function renderMarkers() {{
+            const page = activePage();
+            markerLayer.innerHTML = '';
+            page.markers.forEach((markerData) => {{
+                const marker = document.createElement('button');
+                marker.type = 'button';
+                marker.className = 'marker';
+                marker.style.left = `${{markerData.x}}px`;
+                marker.style.top = `${{markerData.y}}px`;
+                marker.dataset.index = String(markerData.index);
+                marker.setAttribute('aria-label', `Open photo ${{markerData.number}}`);
+                const number = document.createElement('span');
+                number.className = 'marker-number';
+                number.textContent = String(markerData.number);
+                marker.appendChild(number);
+                marker.addEventListener('click', () => showPhoto(markerData.index));
+                markerLayer.appendChild(marker);
+            }});
+        }}
+
+        function renderPage() {{
+            const page = activePage();
+            container.style.width = `${{page.width}}px`;
+            container.style.height = `${{page.height}}px`;
+            if (page.markerSize) {{
+                document.documentElement.style.setProperty('--marker-size', `${{page.markerSize}}px`);
+                document.documentElement.style.setProperty('--marker-font-size', `${{Math.max(12, Math.round(page.markerSize * 0.29))}}px`);
+            }}
+            aerialImage.src = page.aerialSrc;
+            aerialImage.style.width = `${{page.width}}px`;
+            aerialImage.style.height = `${{page.height}}px`;
+            currentPhotoIndex = -1;
+            renderPageNav();
+            renderLegend();
+            renderMarkers();
+            fitToViewport();
+            closeLightbox();
+        }}
+
+        function setActivePage(index) {{
+            if (index < 0 || index >= pageData.length || index === activePageIndex) {{
+                return;
+            }}
+            activePageIndex = index;
+            renderPage();
+        }}
+
+        function showPhoto(index) {{
+            const page = activePage();
+            if (index < 0 || index >= page.photos.length) return;
+            const photo = page.photos[index];
+            currentPhotoIndex = index;
+            lightboxImg.src = photo.src;
+            lightboxTitle.textContent = photo.filename || '';
+            lightboxIndex.textContent = `Photo ${{index + 1}} of ${{page.photos.length}}`;
+            const note = photo.note ? String(photo.note).trim() : '';
+            lightboxNote.textContent = note;
+            lightboxNote.style.display = note ? 'block' : 'none';
+            lightbox.classList.add('active');
+            lightbox.setAttribute('aria-hidden', 'false');
+            updateNavButtons();
+        }}
+
+        function closeLightbox() {{
+            lightbox.classList.remove('active');
+            lightbox.setAttribute('aria-hidden', 'true');
+            lightboxImg.src = '';
+            currentPhotoIndex = -1;
+        }}
+
+        function updateNavButtons() {{
+            const page = activePage();
+            prevBtn.style.visibility = currentPhotoIndex > 0 ? 'visible' : 'hidden';
+            nextBtn.style.visibility = currentPhotoIndex < page.photos.length - 1 ? 'visible' : 'hidden';
+        }}
+
+        function navigatePhoto(delta) {{
+            const page = activePage();
+            const next = currentPhotoIndex + delta;
+            if (next >= 0 && next < page.photos.length) {{
+                showPhoto(next);
+            }}
+        }}
+
+        function zoomAt(x, y, nextScale) {{
+            const clamped = Math.min(10, Math.max(0.1, nextScale));
+            translateX = x - (x - translateX) * (clamped / scale);
+            translateY = y - (y - translateY) * (clamped / scale);
+            scale = clamped;
+            updateTransform();
+        }}
+
+        viewport.addEventListener('wheel', (event) => {{
+            event.preventDefault();
+            const factor = event.deltaY > 0 ? 0.9 : 1.1;
+            zoomAt(event.clientX, event.clientY, scale * factor);
+        }}, {{ passive: false }});
+
+        container.addEventListener('mousedown', (event) => {{
+            if (event.target.closest('.marker')) return;
+            isPanning = true;
+            startX = event.clientX - translateX;
+            startY = event.clientY - translateY;
+        }});
+        document.addEventListener('mousemove', (event) => {{
+            if (!isPanning) return;
+            translateX = event.clientX - startX;
+            translateY = event.clientY - startY;
+            updateTransform();
+        }});
+        document.addEventListener('mouseup', () => {{
+            isPanning = false;
+        }});
+
+        document.getElementById('zoom-in').addEventListener('click', () => {{
+            zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, scale * 1.3);
+        }});
+        document.getElementById('zoom-out').addEventListener('click', () => {{
+            zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, scale / 1.3);
+        }});
+        document.getElementById('fit-view').addEventListener('click', fitToViewport);
+        closeBtn.addEventListener('click', closeLightbox);
+        prevBtn.addEventListener('click', () => navigatePhoto(-1));
+        nextBtn.addEventListener('click', () => navigatePhoto(1));
+        lightbox.addEventListener('click', (event) => {{
+            if (event.target === lightbox) closeLightbox();
+        }});
+        document.addEventListener('keydown', (event) => {{
+            if (!lightbox.classList.contains('active')) return;
+            if (event.key === 'Escape') closeLightbox();
+            if (event.key === 'ArrowLeft') navigatePhoto(-1);
+            if (event.key === 'ArrowRight') navigatePhoto(1);
+        }});
+        window.addEventListener('resize', fitToViewport);
+
+        renderPage();
+    </script>
+</body>
+</html>'''
+
     def generate_html_with_folder(
         self,
         photos: List[Dict[str, Any]],
