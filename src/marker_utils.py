@@ -82,19 +82,25 @@ def colorize_marker(
     The logo's pixels are preserved unchanged — group identity comes from
     the rectangle color, not from tinting the logo. The rectangle hugs the
     logo's alpha bounding box with a small inset for breathing room.
-    'default' uses a black rectangle.
+    'default' uses a black rectangle. 'none' returns the logo with no
+    rectangle at all (used in Page mode).
 
     Args:
         marker_image: PIL Image in RGBA mode (logo on transparent canvas)
-        target_color: Hex color for the rectangle (e.g., "#F6D11A") or "default"
+        target_color: Hex color for the rectangle (e.g., "#F6D11A"),
+            "default" for a black rectangle, or "none" for no rectangle
         source_color: Unused, kept for backwards compatibility
 
     Returns:
-        New PIL Image: original logo + colored rectangle outline
+        New PIL Image: original logo + colored rectangle outline (or
+        original logo unmodified when target_color == "none")
     """
     _ = source_color
     if marker_image.mode != "RGBA":
         marker_image = marker_image.convert("RGBA")
+
+    if target_color.lower() == "none":
+        return marker_image.copy()
 
     if target_color.lower() == "default":
         rect_rgb = (0, 0, 0)
@@ -174,6 +180,7 @@ class MarkerColorizer:
 
     def __init__(self) -> None:
         self._base_image: Optional[Image.Image] = None
+        self._base_image_full: Optional[Image.Image] = None
         self._cache: Dict[str, Image.Image] = {}
         self._load_base_image()
 
@@ -190,10 +197,14 @@ class MarkerColorizer:
 
         if source_path is None:
             self._base_image = None
+            self._base_image_full = None
             return
 
         raw = Image.open(source_path).convert("RGBA")
         self._base_image = _normalize_to_square(raw, MARKER_BASE_SIZE)
+        # Page mode (color="none") uses the logo without margin reserved for
+        # the group rectangle, so the plain logo reads at full size.
+        self._base_image_full = _normalize_to_square(raw, MARKER_BASE_SIZE, content_ratio=1.0)
 
     def reset(self) -> None:
         """Clear cache and reload base image (call after logo upload/clear)."""
@@ -205,7 +216,8 @@ class MarkerColorizer:
         Get a colored marker image at the specified size.
 
         Args:
-            color: Hex color for the marker
+            color: Hex color for the marker, "default" (black rectangle),
+                or "none" (plain logo, no rectangle)
             size: Desired size in pixels
 
         Returns:
@@ -214,15 +226,17 @@ class MarkerColorizer:
         cache_key = f"{color}_{size}"
 
         if cache_key not in self._cache:
-            if self._base_image is not None:
-                colored = colorize_marker(self._base_image, color)
+            base = self._base_image_full if color.lower() == "none" else self._base_image
+            if base is not None:
+                colored = colorize_marker(base, color)
                 resized = colored.resize(
                     (size, size),
                     Image.Resampling.LANCZOS,
                 )
                 self._cache[cache_key] = resized
             else:
-                self._cache[cache_key] = create_fallback_marker(size, color)
+                fallback_color = "#000000" if color.lower() in ("default", "none") else color
+                self._cache[cache_key] = create_fallback_marker(size, fallback_color)
 
         return self._cache[cache_key]
 

@@ -86,6 +86,7 @@ from src.image_processor import ImageProcessor
 from src.kmz_generator import create_kmz_from_files
 from src.marker_utils import get_colorizer, reset_colorizer
 from src.photo_groups import GroupAssignments, DEFAULT_GROUPS, PRESET_COLORS, PhotoGroup
+from src.photo_pages import PageAssignments, PageView, PhotoPage
 from src.utils import get_default_output_path, open_file_in_default_app, open_folder_containing
 from src.coordinate_transform import PixelPoint
 
@@ -119,6 +120,9 @@ class AppState:
     drive_sources: Dict[str, str]       # virtual_path -> file_id
     drive_folder_url: Optional[str]     # currently imported folder URL
     drive_access_token: Optional[str]   # OAuth access token for private folders
+    organization_mode: str              # "group" | "page"
+    page_assignments: PageAssignments
+    active_page_id: Optional[str]
 
 
 class AppApi:
@@ -624,6 +628,23 @@ class AppApi:
             response["warnings"] = errors[:3]
         return response
 
+    def _describe_custom_map(self, path: str) -> Dict[str, Any]:
+        """Return data URIs and dimensions for an existing custom map path."""
+        try:
+            with Image.open(path) as image:
+                width, height = image.size
+        except Exception as exc:
+            return {"status": "error", "message": f"Unable to read image: {exc}"}
+        return {
+            "status": "ok",
+            "path": path,
+            "uri": _image_to_data_uri(path),
+            "file_uri": _path_to_uri(path),
+            "width": width,
+            "height": height,
+            "name": Path(path).name,
+        }
+
     def select_custom_map_image(self) -> Dict[str, Any]:
         if not self._window:
             return {"status": "error", "message": "Window not ready"}
@@ -646,25 +667,23 @@ class AppApi:
             return {"status": "cancel"}
 
         path = result[0]
-        try:
-            with Image.open(path) as image:
-                width, height = image.size
-        except Exception as exc:
-            return {"status": "error", "message": f"Unable to read image: {exc}"}
+        described = self._describe_custom_map(path)
+        if described.get("status") != "ok":
+            return described
 
         if self._state.custom_map_path and self._state.custom_map_path != path:
             self._state.custom_marker_overrides = {}
 
         self._state.custom_map_path = path
-        return {
-            "status": "ok",
-            "path": path,
-            "uri": _image_to_data_uri(path),
-            "file_uri": _path_to_uri(path),
-            "width": width,
-            "height": height,
-            "name": Path(path).name,
-        }
+        return described
+
+    def load_custom_map_for_path(self, path: str) -> Dict[str, Any]:
+        """Resolve an existing custom-map path into editor-ready URIs."""
+        if not isinstance(path, str) or not path.strip():
+            return {"status": "error", "message": "Path required."}
+        if not Path(path).exists():
+            return {"status": "error", "message": "File not found."}
+        return self._describe_custom_map(path)
 
     def clear_photos(self) -> Dict[str, Any]:
         self._state.selected_files = []
@@ -861,6 +880,187 @@ class AppApi:
             "groups": self._serialize_groups(),
         }
 
+    # ── Pages (sibling of groups) ───────────────────────────────────
+
+    def get_organization_mode(self) -> Dict[str, Any]:
+        return {"status": "ok", "mode": self._state.organization_mode}
+
+    def set_organization_mode(self, mode: str) -> Dict[str, Any]:
+        if mode not in ("group", "page"):
+            return {"status": "error", "message": "Invalid mode."}
+        self._state.organization_mode = mode
+        _apply_overrides(self._state, {})
+        return {
+            "status": "ok",
+            "mode": mode,
+            "groups": self._groups_payload(),
+            "pages": self._pages_payload(),
+            "photos": self._build_photo_list(),
+        }
+
+    def get_pages(self) -> Dict[str, Any]:
+        return self._pages_payload()
+
+    def add_page(self, name: str = "") -> Dict[str, Any]:
+        page = self._state.page_assignments.add_page(name)
+        self._state.active_page_id = page.id
+        _apply_overrides(self._state, {})
+        return {
+            "status": "ok",
+            "page_id": page.id,
+            **self._pages_payload(),
+        }
+
+    def delete_page(self, page_id: str) -> Dict[str, Any]:
+        if not self._state.page_assignments.remove_page(page_id):
+            return {"status": "error", "message": "Page not found."}
+        if self._state.active_page_id == page_id:
+            self._state.active_page_id = None
+        _apply_overrides(self._state, {})
+        return {
+            "status": "ok",
+            **self._pages_payload(),
+            "photos": self._build_photo_list(),
+        }
+
+    def rename_page(self, page_id: str, new_name: str) -> Dict[str, Any]:
+        if not self._state.page_assignments.rename_page(page_id, new_name):
+            return {"status": "error", "message": "Page not found or empty name."}
+        _apply_overrides(self._state, {})
+        return {"status": "ok", **self._pages_payload()}
+
+    def assign_photo_page(
+        self,
+        filepath: Union[str, List[str]],
+        page_id: Optional[str],
+    ) -> Dict[str, Any]:
+        if isinstance(filepath, list):
+            raw_paths = filepath
+        else:
+            raw_paths = [filepath]
+
+        paths = [path for path in raw_paths if isinstance(path, str) and path]
+        if not paths:
+            return {"status": "error", "message": "No photos selected."}
+
+        target_id: Optional[str] = None
+        if page_id:
+            if not self._state.page_assignments.get_page(page_id):
+                return {"status": "error", "message": "Page not found."}
+            target_id = page_id
+
+        seen = set()
+        valid_paths = []
+        for path in paths:
+            if path in self._state.selected_files and path not in seen:
+                valid_paths.append(path)
+                seen.add(path)
+        if not valid_paths:
+            return {"status": "error", "message": "Photo not found."}
+
+        for path in valid_paths:
+            self._state.page_assignments.assign_photo(path, target_id)
+        _sync_page_assignments_state(self._state, prune_photos=bool(self._state.selected_files))
+        _apply_overrides(self._state, {})
+        return {
+            "status": "ok",
+            "photos": self._build_photo_list(),
+            **self._pages_payload(),
+        }
+
+    def set_active_page(self, page_id: Optional[str]) -> Dict[str, Any]:
+        if page_id and not self._state.page_assignments.get_page(page_id):
+            return {"status": "error", "message": "Page not found."}
+        self._state.active_page_id = page_id or None
+        _apply_overrides(self._state, {})
+        page = (
+            self._state.page_assignments.get_page(self._state.active_page_id)
+            if self._state.active_page_id else None
+        )
+        return {
+            "status": "ok",
+            "active_page_id": self._state.active_page_id,
+            "view": page.view.to_dict() if page else None,
+            "custom_map_path": page.custom_map_path if page else None,
+            "autoplot_enabled": page.autoplot_enabled if page else True,
+        }
+
+    def save_page_view(self, page_id: str, view: Dict[str, Any]) -> Dict[str, Any]:
+        if not self._state.page_assignments.get_page(page_id):
+            return {"status": "error", "message": "Page not found."}
+        self._state.page_assignments.update_view(page_id, PageView.from_dict(view))
+        _apply_overrides(self._state, {})
+        return {"status": "ok"}
+
+    def set_page_custom_map(self, page_id: str, path: Optional[str]) -> Dict[str, Any]:
+        if not self._state.page_assignments.set_custom_map(page_id, path):
+            return {"status": "error", "message": "Page not found."}
+        _apply_overrides(self._state, {})
+        return {"status": "ok", **self._pages_payload()}
+
+    def clear_page_custom_map(self, page_id: str) -> Dict[str, Any]:
+        return self.set_page_custom_map(page_id, None)
+
+    def save_page_marker_override(
+        self,
+        page_id: str,
+        filepath: str,
+        x: Optional[float],
+        y: Optional[float],
+    ) -> Dict[str, Any]:
+        if not self._state.page_assignments.get_page(page_id):
+            return {"status": "error", "message": "Page not found."}
+        if x is None or y is None:
+            self._state.page_assignments.set_marker_override(page_id, filepath, None)
+        else:
+            try:
+                point = PixelPoint(float(x), float(y))
+            except (TypeError, ValueError):
+                return {"status": "error", "message": "Invalid coordinates."}
+            self._state.page_assignments.set_marker_override(page_id, filepath, point)
+        _apply_overrides(self._state, {})
+        return {"status": "ok"}
+
+    def set_page_autoplot_enabled(self, page_id: str, enabled: bool) -> Dict[str, Any]:
+        if not self._state.page_assignments.set_autoplot_enabled(page_id, enabled):
+            return {"status": "error", "message": "Page not found."}
+        _apply_overrides(self._state, {})
+        return {"status": "ok"}
+
+    def select_page_custom_map_image(self, page_id: str) -> Dict[str, Any]:
+        """Open file dialog and assign the chosen image as the page's custom map."""
+        if not self._window:
+            return {"status": "error", "message": "Window not ready."}
+        if not self._state.page_assignments.get_page(page_id):
+            return {"status": "error", "message": "Page not found."}
+        try:
+            result = self._window.create_file_dialog(
+                webview.FileDialog.OPEN,
+                allow_multiple=False,
+                file_types=(
+                    "Image files (*.jpg;*.jpeg;*.png;*.tif;*.tiff)",
+                    "All files (*.*)",
+                ),
+            )
+        except Exception as exc:
+            return {"status": "error", "message": f"File dialog failed: {exc}"}
+        if not result:
+            return {"status": "cancel"}
+        chosen = result[0]
+        described = self._describe_custom_map(chosen)
+        if described.get("status") != "ok":
+            return described
+        self._state.page_assignments.set_custom_map(page_id, chosen)
+        # Switching to a new image clears that page's manual marker overrides.
+        page = self._state.page_assignments.get_page(page_id)
+        if page:
+            page.marker_overrides = {}
+        _apply_overrides(self._state, {})
+        payload = {"status": "ok", "custom_map": described, **self._pages_payload()}
+        return payload
+
+    # ────────────────────────────────────────────────────────────────
+
     def select_output_folder(self) -> Dict[str, Any]:
         if not self._window:
             return {"status": "error", "message": "Window not ready"}
@@ -991,6 +1191,9 @@ class AppApi:
             group = self._state.group_assignments.get_group_for_photo(filepath)
             group_id = group.id if group else "default"
             group_color = group.color if group else "default"
+            page = self._state.page_assignments.get_page_for_photo(filepath)
+            page_id = page.id if page else None
+            page_name = page.name if page else None
             custom_name = self._state.photo_aliases.get(filepath, "")
             display_name = custom_name if custom_name else metadata.filename
             note = self._state.photo_notes.get(filepath, "")
@@ -1006,6 +1209,8 @@ class AppApi:
                 "pixel": pixel_payload,
                 "group_id": group_id,
                 "group_color": group_color,
+                "page_id": page_id,
+                "page_name": page_name,
             })
 
         return {
@@ -1018,6 +1223,9 @@ class AppApi:
             "custom_map_uri": custom_map_uri,
             "custom_map_file_uri": custom_map_file_uri,
             "custom_autoplot_enabled": self._state.custom_autoplot_enabled,
+            "organization_mode": self._state.organization_mode,
+            "pages": self._serialize_pages(),
+            "active_page_id": self._state.active_page_id,
         }
 
     def save_overrides(self, payload: Dict[str, Any]) -> bool:
@@ -1027,6 +1235,214 @@ class AppApi:
         except Exception:
             return False
 
+    def _export_html_page_mode(
+        self,
+        payload: Dict[str, Any],
+        output_path: str,
+    ) -> Dict[str, Any]:
+        """Multi-page HTML export: one section per page with its own background."""
+        pages_with_photos = [
+            page
+            for page in self._state.page_assignments.get_all_pages()
+            if page.photo_paths
+        ]
+        if not pages_with_photos:
+            return {"status": "error", "message": "No pages with photos to export."}
+
+        compression_quality = int(payload.get("compression_quality", 30))
+        marker_size = int(payload.get("marker_size", self._state.marker_size))
+
+        warnings: List[str] = []
+        pages_for_generator: List[Dict[str, Any]] = []
+
+        for page in pages_with_photos:
+            page_files = list(page.photo_paths)
+            # Filter to GPS photos for tile pages; flag non-GPS photos as skipped.
+            tile_eligible_files: List[str] = []
+            non_gps_files: List[str] = []
+            for fp in page_files:
+                metadata = self._state.file_metadata.get(fp)
+                if not metadata:
+                    continue
+                has_gps = bool(metadata.gps) or fp in self._state.gps_overrides
+                if has_gps:
+                    tile_eligible_files.append(fp)
+                else:
+                    non_gps_files.append(fp)
+
+            if page.custom_map_path:
+                # Custom-map page: manual placements via marker_overrides.
+                if not Path(page.custom_map_path).exists():
+                    warnings.append(
+                        f"Page '{page.name}' custom image not found; skipped."
+                    )
+                    continue
+
+                page_files_with_pixels = [
+                    fp for fp in page_files if fp in page.marker_overrides
+                ]
+                missing = [fp for fp in page_files if fp not in page.marker_overrides]
+                if missing:
+                    warnings.append(
+                        f"Page '{page.name}': {len(missing)} photo(s) without manual placement skipped."
+                    )
+                if not page_files_with_pixels:
+                    warnings.append(f"Page '{page.name}' has no placed photos.")
+                    continue
+
+                # Build markers list compatible with _process_custom_export.
+                custom_markers = []
+                for fp in page_files_with_pixels:
+                    pt = page.marker_overrides[fp]
+                    custom_markers.append({"filepath": fp, "x": pt.x, "y": pt.y})
+
+                # Process photos (Drive vs local).
+                all_drive = page_files_with_pixels and all(
+                    fp in self._state.drive_sources for fp in page_files_with_pixels
+                )
+                if all_drive:
+                    processed_photos, marker_pixels = _build_drive_custom_export(
+                        self._state, custom_markers,
+                    )
+                else:
+                    processed_photos, marker_pixels = _process_custom_export(
+                        self._state, custom_markers, compression_quality,
+                    )
+
+                heading = float(page.view.custom_heading or 0)
+                export_image_path = page.custom_map_path
+                if heading:
+                    export_image_path, marker_pixels = _rotate_custom_map_for_export(
+                        page.custom_map_path, marker_pixels, heading,
+                    )
+                with open(export_image_path, "rb") as f:
+                    aerial_bytes = f.read()
+                with Image.open(export_image_path) as img:
+                    aerial_size = img.size
+                aerial_mime = _guess_mime_type(export_image_path)
+
+                pages_for_generator.append({
+                    "id": page.id,
+                    "name": page.name,
+                    "photos": processed_photos,
+                    "marker_pixels": marker_pixels,
+                    "aerial_image_bytes": aerial_bytes,
+                    "aerial_image_size": aerial_size,
+                    "aerial_image_mime": aerial_mime,
+                })
+                continue
+
+            # Tile-mode page: requires GPS photos.
+            if non_gps_files:
+                warnings.append(
+                    f"Page '{page.name}': {len(non_gps_files)} photo(s) without GPS skipped."
+                )
+            if not tile_eligible_files:
+                warnings.append(f"Page '{page.name}' has no GPS photos to plot.")
+                continue
+
+            view = page.view
+            center_lat = float(view.lat) if view.lat is not None else 0.0
+            center_lng = float(view.lng) if view.lng is not None else 0.0
+            zoom = int(view.zoom) if view.zoom else 19
+            heading = float(view.heading) if view.heading is not None else 0.0
+            export_width = int(payload.get("export_width", EXPORT_MAX_DIM))
+            export_height = int(payload.get("export_height", EXPORT_MAX_DIM))
+
+            base_width, base_height = _compute_base_size(export_width, export_height, heading)
+            api_key = get_google_maps_api_key() or ""
+            map_image, left, top = _stitch_tiles(
+                center_lat, center_lng, zoom, base_width, base_height, api_key=api_key,
+            )
+            map_image, expand_left, expand_top = _rotate_map_for_export(
+                map_image, base_width, base_height, heading,
+            )
+            rotated_width, rotated_height = map_image.size
+            crop_left = int(round((rotated_width - export_width) / 2))
+            crop_top = int(round((rotated_height - export_height) / 2))
+            crop_box = (
+                crop_left, crop_top,
+                crop_left + export_width, crop_top + export_height,
+            )
+            map_image = map_image.crop(crop_box)
+            crop_left -= expand_left
+            crop_top -= expand_top
+
+            # Build markers payload from GPS data for the page's tile-eligible photos.
+            page_markers = []
+            for fp in tile_eligible_files:
+                metadata = self._state.file_metadata.get(fp)
+                gps = self._state.gps_overrides.get(fp) or metadata.gps
+                page_markers.append({
+                    "filepath": fp,
+                    "latitude": gps.latitude,
+                    "longitude": gps.longitude,
+                    "altitude": gps.altitude,
+                })
+
+            marker_pixels = _build_marker_pixels(
+                page_markers, left, top, base_width, base_height,
+                heading, crop_left, crop_top, zoom,
+            )
+
+            # Apply per-page manual overrides on top of GPS-computed pixels.
+            for idx, fp in enumerate(tile_eligible_files):
+                if fp in page.marker_overrides:
+                    marker_pixels[idx] = page.marker_overrides[fp]
+
+            buffer = io.BytesIO()
+            map_image.save(buffer, format="PNG")
+            aerial_bytes = buffer.getvalue()
+            aerial_size = map_image.size
+
+            all_drive = tile_eligible_files and all(
+                fp in self._state.drive_sources for fp in tile_eligible_files
+            )
+            if all_drive:
+                processed_photos = _build_drive_photo_dicts(
+                    self._state, page_markers, files=tile_eligible_files,
+                )
+            else:
+                processed_photos = _process_photos(
+                    self._state, page_markers, compression_quality, files=tile_eligible_files,
+                )
+
+            pages_for_generator.append({
+                "id": page.id,
+                "name": page.name,
+                "photos": processed_photos,
+                "marker_pixels": marker_pixels,
+                "aerial_image_bytes": aerial_bytes,
+                "aerial_image_size": aerial_size,
+                "aerial_image_mime": "image/png",
+            })
+
+        if not pages_for_generator:
+            return {"status": "error", "message": "No pages produced output."}
+
+        generator = HTMLMapGenerator(
+            project_name=payload.get("project_name", "Photo Map"),
+            marker_size=marker_size,
+            proposal_link=payload.get("proposal_link"),
+            client_name=payload.get("client_name"),
+            client_company=payload.get("client_company"),
+            client_address=payload.get("client_address"),
+            **get_company_info(),
+        )
+
+        result_path = generator.generate_multi_page_html(
+            pages_for_generator,
+            output_path=output_path,
+        )
+
+        _apply_overrides(self._state, payload)
+        if not open_file_in_default_app(result_path):
+            open_folder_containing(result_path)
+        response = {"status": "ok", "path": result_path}
+        if warnings:
+            response["warnings"] = warnings
+        return response
+
     def export_html(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         output_path = self._prompt_html_save_path(payload)
         if not output_path:
@@ -1034,6 +1450,9 @@ class AppApi:
 
         try:
             self._sync_group_assignments()
+            # Page-mode export: build one page payload per active page.
+            if payload.get("organization_mode") == "page" or self._state.organization_mode == "page":
+                return self._export_html_page_mode(payload, output_path)
             map_source = payload.get("map_source", "tiles")
             if map_source == "custom":
                 custom_markers = payload.get("custom_markers", [])
@@ -1568,6 +1987,8 @@ class AppApi:
     def _build_marker_images(self) -> Dict[str, str]:
         colorizer = get_colorizer()
         colors = {group.color for group in self._state.group_assignments.get_all_groups()}
+        # Always include the plain-logo marker for Page mode rendering.
+        colors.add("none")
         images: Dict[str, str] = {}
         for color in colors:
             marker_bytes = colorizer.get_colored_marker_bytes(color, UI_MARKER_ICON_SIZE)
@@ -1582,6 +2003,30 @@ class AppApi:
             "groups": self._serialize_groups(),
             "preset_colors": PRESET_COLORS,
             "marker_images": self._build_marker_images(),
+        }
+
+    def _serialize_pages(self) -> List[Dict[str, Any]]:
+        pages = []
+        for page in self._state.page_assignments.get_all_pages():
+            pages.append({
+                "id": page.id,
+                "name": page.name,
+                "count": len(page.photo_paths),
+                "is_active": page.id == self._state.active_page_id,
+                "view": page.view.to_dict(),
+                "custom_map_path": page.custom_map_path,
+                "autoplot_enabled": page.autoplot_enabled,
+            })
+        return pages
+
+    def _pages_payload(self) -> Dict[str, Any]:
+        _sync_page_assignments_state(
+            self._state, prune_photos=bool(self._state.selected_files)
+        )
+        return {
+            "status": "ok",
+            "pages": self._serialize_pages(),
+            "active_page_id": self._state.active_page_id,
         }
 
     def _get_photo_preview_uri(self, filepath: str) -> str:
@@ -1609,6 +2054,9 @@ class AppApi:
             group = self._state.group_assignments.get_group_for_photo(filepath)
             group_id = group.id if group else "default"
             group_color = group.color if group else "default"
+            page = self._state.page_assignments.get_page_for_photo(filepath)
+            page_id = page.id if page else None
+            page_name = page.name if page else None
             custom_name = self._state.photo_aliases.get(filepath, "")
             display_name = custom_name if custom_name else metadata.filename
             note = self._state.photo_notes.get(filepath, "")
@@ -1623,6 +2071,8 @@ class AppApi:
                 "has_override": filepath in self._state.gps_overrides,
                 "group_id": group_id,
                 "group_color": group_color,
+                "page_id": page_id,
+                "page_name": page_name,
             })
         return photos
 
@@ -1685,6 +2135,46 @@ def _serialize_group_state(state: AppState) -> tuple[List[Dict[str, str]], Dict[
     return groups_payload, group_assignments_payload
 
 
+def _sync_page_assignments_state(state: AppState, prune_photos: bool = True) -> None:
+    """Prune deleted photos from pages; clear active_page_id if invalid.
+
+    Pages do NOT auto-assign — photos can be unassigned in page mode.
+    """
+    if prune_photos:
+        selected = set(state.selected_files)
+        for page in state.page_assignments.pages.values():
+            page.photo_paths = [path for path in page.photo_paths if path in selected]
+            page.marker_overrides = {
+                fp: pt for fp, pt in page.marker_overrides.items() if fp in selected
+            }
+    if state.active_page_id and state.active_page_id not in state.page_assignments.pages:
+        state.active_page_id = None
+
+
+def _serialize_page_state(state: AppState) -> tuple[List[Dict[str, Any]], Dict[str, str]]:
+    pages_payload: List[Dict[str, Any]] = []
+    for page in state.page_assignments.get_all_pages():
+        marker_overrides_payload: Dict[str, Dict[str, float]] = {}
+        for fp, pt in page.marker_overrides.items():
+            marker_overrides_payload[fp] = {"x": pt.x, "y": pt.y}
+        pages_payload.append({
+            "id": page.id,
+            "name": page.name,
+            "view": page.view.to_dict(),
+            "custom_map_path": page.custom_map_path,
+            "marker_overrides": marker_overrides_payload,
+            "autoplot_enabled": page.autoplot_enabled,
+        })
+
+    page_assignments_payload: Dict[str, str] = {}
+    for page in state.page_assignments.pages.values():
+        for filepath in page.photo_paths:
+            if filepath:
+                page_assignments_payload[filepath] = page.id
+
+    return pages_payload, page_assignments_payload
+
+
 def _load_overrides(
     overrides_path: Path,
 ) -> tuple[
@@ -1699,6 +2189,9 @@ def _load_overrides(
     Dict[str, str],
     Dict[str, str],
     GroupAssignments,
+    str,
+    PageAssignments,
+    Optional[str],
 ]:
     marker_size = 96
     heading = 0
@@ -1711,6 +2204,9 @@ def _load_overrides(
     group_aliases: Dict[str, str] = {}
     photo_notes: Dict[str, str] = {}
     group_assignments = GroupAssignments()
+    organization_mode = "group"
+    page_assignments = PageAssignments()
+    active_page_id: Optional[str] = None
 
     if overrides_path.exists():
         try:
@@ -1799,6 +2295,65 @@ def _load_overrides(
                     cleaned = note.strip()
                     if cleaned:
                         photo_notes[filepath] = cleaned
+
+            raw_mode = data.get("organization_mode")
+            if isinstance(raw_mode, str) and raw_mode in ("group", "page"):
+                organization_mode = raw_mode
+
+            raw_pages = data.get("pages", [])
+            if isinstance(raw_pages, list):
+                for entry in raw_pages:
+                    if not isinstance(entry, dict):
+                        continue
+                    page_id = entry.get("id")
+                    page_name = entry.get("name")
+                    if not isinstance(page_id, str) or not page_id.strip():
+                        continue
+                    if not isinstance(page_name, str):
+                        page_name = page_id
+                    custom_map_value = entry.get("custom_map_path")
+                    custom_map_clean = (
+                        custom_map_value.strip()
+                        if isinstance(custom_map_value, str) and custom_map_value.strip()
+                        else None
+                    )
+                    autoplot = entry.get("autoplot_enabled", True)
+                    autoplot_value = bool(autoplot) if isinstance(autoplot, bool) else True
+                    overrides_raw = entry.get("marker_overrides", {})
+                    page_overrides: Dict[str, PixelPoint] = {}
+                    if isinstance(overrides_raw, dict):
+                        for fp, pt in overrides_raw.items():
+                            if not isinstance(fp, str) or not isinstance(pt, dict):
+                                continue
+                            try:
+                                page_overrides[fp] = PixelPoint(
+                                    float(pt.get("x", 0.0)),
+                                    float(pt.get("y", 0.0)),
+                                )
+                            except (TypeError, ValueError):
+                                continue
+                    page_obj = PhotoPage(
+                        id=page_id.strip(),
+                        name=page_name.strip() or page_id.strip(),
+                        view=PageView.from_dict(entry.get("view")),
+                        custom_map_path=custom_map_clean,
+                        marker_overrides=page_overrides,
+                        autoplot_enabled=autoplot_value,
+                    )
+                    page_assignments.insert_page(page_obj)
+
+            raw_page_assignments = data.get("page_assignments", {})
+            if isinstance(raw_page_assignments, dict):
+                for filepath, page_id in raw_page_assignments.items():
+                    if not isinstance(filepath, str) or not isinstance(page_id, str):
+                        continue
+                    if page_id not in page_assignments.pages:
+                        continue
+                    page_assignments.assign_photo(filepath, page_id)
+
+            raw_active_page = data.get("active_page_id")
+            if isinstance(raw_active_page, str) and raw_active_page in page_assignments.pages:
+                active_page_id = raw_active_page
         except (OSError, json.JSONDecodeError, ValueError, TypeError):
             pass
 
@@ -1814,6 +2369,9 @@ def _load_overrides(
         group_aliases,
         photo_notes,
         group_assignments,
+        organization_mode,
+        page_assignments,
+        active_page_id,
     )
 
 
@@ -1893,6 +2451,7 @@ def _apply_overrides(state: AppState, payload: Dict[str, Any]) -> None:
     state.heading = heading
     state.custom_heading = custom_heading
     _sync_group_assignments_state(state, prune_photos=bool(state.selected_files))
+    _sync_page_assignments_state(state, prune_photos=bool(state.selected_files))
 
     markers_payload = []
     for filepath, gps in state.gps_overrides.items():
@@ -1927,6 +2486,7 @@ def _apply_overrides(state: AppState, payload: Dict[str, Any]) -> None:
         if filepath and note
     }
     groups_payload, group_assignments_payload = _serialize_group_state(state)
+    pages_payload, page_assignments_payload = _serialize_page_state(state)
 
     data = {
         "marker_size": marker_size,
@@ -1941,6 +2501,10 @@ def _apply_overrides(state: AppState, payload: Dict[str, Any]) -> None:
         "group_assignments": group_assignments_payload,
         "group_aliases": group_aliases_payload,
         "photo_notes": photo_notes_payload,
+        "organization_mode": state.organization_mode,
+        "pages": pages_payload,
+        "page_assignments": page_assignments_payload,
+        "active_page_id": state.active_page_id,
     }
     state.overrides_path.parent.mkdir(parents=True, exist_ok=True)
     state.overrides_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -1955,6 +2519,18 @@ def _build_html(state: AppState) -> str:
     if marker_path.exists():
         marker_b64 = base64.b64encode(marker_path.read_bytes()).decode("utf-8")
 
+    pages_initial: List[Dict[str, Any]] = []
+    for page in state.page_assignments.get_all_pages():
+        pages_initial.append({
+            "id": page.id,
+            "name": page.name,
+            "count": len(page.photo_paths),
+            "is_active": page.id == state.active_page_id,
+            "view": page.view.to_dict(),
+            "custom_map_path": page.custom_map_path,
+            "autoplot_enabled": page.autoplot_enabled,
+        })
+
     initial_state = {
         "api_key": get_google_maps_api_key() or "",
         "oauth_client_id": get_oauth_client_id() or "",
@@ -1964,6 +2540,9 @@ def _build_html(state: AppState) -> str:
         "heading": state.heading,
         "heic_supported": HEIC_SUPPORTED,
         "projects": _list_projects(),
+        "organization_mode": state.organization_mode,
+        "pages": pages_initial,
+        "active_page_id": state.active_page_id,
     }
 
     html = html.replace("__INITIAL_STATE__", json.dumps(initial_state))
@@ -2395,9 +2974,13 @@ def _process_photos(
     marker_overrides: List[Dict[str, Any]],
     compression_quality: int,
     max_workers: int = 4,
+    files: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Process photos for Google tiles export with parallel image processing.
+
+    If `files` is provided, only those filepaths are processed. Otherwise the
+    entire `state.selected_files` is used.
     """
     override_map = {
         item.get("filepath"): item
@@ -2411,8 +2994,9 @@ def _process_photos(
     )
 
     # Prepare items for processing
+    files_to_walk = files if files is not None else state.selected_files
     items_to_process = []
-    for filepath in state.selected_files:
+    for filepath in files_to_walk:
         metadata = state.file_metadata.get(filepath)
         if not metadata:
             continue
@@ -2478,16 +3062,22 @@ def _process_photos(
 def _build_drive_photo_dicts(
     state: AppState,
     marker_overrides: List[Dict[str, Any]],
+    files: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
-    """Build photo dicts with Drive image URLs for web deploy (no downloading)."""
+    """Build photo dicts with Drive image URLs for web deploy (no downloading).
+
+    If `files` is provided, only those filepaths are considered. Otherwise the
+    entire `state.selected_files` is used.
+    """
     override_map = {
         item.get("filepath"): item
         for item in marker_overrides
         if item.get("filepath")
     }
 
+    files_to_walk = files if files is not None else state.selected_files
     processed_photos: List[Dict[str, Any]] = []
-    for filepath in state.selected_files:
+    for filepath in files_to_walk:
         metadata = state.file_metadata.get(filepath)
         if not metadata:
             continue
@@ -2585,6 +3175,9 @@ def main() -> None:
         group_aliases,
         photo_notes,
         group_assignments,
+        organization_mode,
+        page_assignments,
+        active_page_id,
     ) = _load_overrides(overrides_path)
 
     state = AppState(
@@ -2607,6 +3200,9 @@ def main() -> None:
         drive_sources={},
         drive_folder_url=None,
         drive_access_token=None,
+        organization_mode=organization_mode,
+        page_assignments=page_assignments,
+        active_page_id=active_page_id,
     )
 
     html = _build_html(state)

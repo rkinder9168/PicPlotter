@@ -498,6 +498,337 @@ class HTMLMapGenerator:
 
         return html_path
 
+    def _build_page_payload(
+        self,
+        photos: List[Dict[str, Any]],
+        marker_pixels: Optional[List[PixelPoint]],
+        transform: Optional[AffineTransform],
+        aerial_image_bytes: Optional[bytes],
+        aerial_image_path: Optional[str],
+        aerial_image_mime: Optional[str],
+        aerial_image_size: Optional[tuple],
+    ) -> Dict[str, Any]:
+        """Build per-page assets used by generate_multi_page_html.
+
+        Returns a dict with photos_data, aerial_src, image_width, image_height,
+        markers_html, and the colors used so we can build a unified
+        markers_by_color block for the page-color CSS.
+        """
+        if marker_pixels is not None and len(marker_pixels) != len(photos):
+            raise ValueError("marker_pixels length must match photos")
+        if marker_pixels is None and transform is None:
+            raise ValueError("transform required when marker_pixels not provided")
+
+        if aerial_image_bytes is None:
+            if not aerial_image_path:
+                raise ValueError("aerial_image_path required when aerial_image_bytes not provided")
+            with open(aerial_image_path, 'rb') as f:
+                aerial_data = f.read()
+            mime_type = self._get_mime_type(aerial_image_path)
+            with Image.open(aerial_image_path) as img:
+                img_width, img_height = img.size
+        else:
+            aerial_data = aerial_image_bytes
+            mime_type = aerial_image_mime or (
+                self._get_mime_type(aerial_image_path) if aerial_image_path else "image/png"
+            )
+            if aerial_image_size:
+                img_width, img_height = aerial_image_size
+            else:
+                with Image.open(io.BytesIO(aerial_data)) as img:
+                    img_width, img_height = img.size
+
+        aerial_b64 = base64.b64encode(aerial_data).decode('utf-8')
+        aerial_src = f"data:{mime_type};base64,{aerial_b64}"
+
+        photos_data = []
+        markers_html = []
+        for i, photo in enumerate(photos):
+            if 'image_url' in photo:
+                photo_src = photo['image_url']
+            else:
+                photo_b64 = base64.b64encode(photo['image_data']).decode('utf-8')
+                photo_src = f"data:image/jpeg;base64,{photo_b64}"
+            display_name = photo.get("display_name") or photo.get("filename") or ""
+            note = photo.get("note", "")
+            photos_data.append({
+                "src": photo_src,
+                "filename": display_name,
+                "note": note,
+            })
+            pixel = marker_pixels[i] if marker_pixels is not None else transform.transform(photo['gps'])
+            # Multi-page output uses the plain "none" marker for every photo.
+            markers_html.append(self._create_marker_html(i, pixel, "none"))
+
+        return {
+            "photos_data": photos_data,
+            "aerial_src": aerial_src,
+            "image_width": img_width,
+            "image_height": img_height,
+            "markers_html": "\n        ".join(markers_html),
+        }
+
+    def generate_multi_page_html(
+        self,
+        pages: List[Dict[str, Any]],
+        output_path: Optional[str] = None,
+        return_content: bool = False,
+    ) -> str:
+        """Generate a multi-page HTML deliverable.
+
+        Each entry in `pages` describes one page with these keys:
+          - id: page id (string)
+          - name: page display name (string)
+          - photos: list of photo dicts (image_data or image_url, filename, note, ...)
+          - marker_pixels: list of PixelPoint for that page's photos (one per photo)
+          - aerial_image_bytes / aerial_image_path: the page's background snapshot
+          - aerial_image_mime, aerial_image_size: optional metadata for the bytes path
+          - skipped_photos: optional list of filenames that were dropped (for status)
+
+        The output is a single self-contained HTML document containing all
+        pages with a tab strip for navigation. Markers always use the plain
+        ("none") logo. Per-page legend is the list of photos on the active page.
+        """
+        if not pages:
+            raise ValueError("At least one page is required")
+
+        page_payloads: List[Dict[str, Any]] = []
+        for page in pages:
+            payload = self._build_page_payload(
+                photos=page.get("photos", []),
+                marker_pixels=page.get("marker_pixels"),
+                transform=page.get("transform"),
+                aerial_image_bytes=page.get("aerial_image_bytes"),
+                aerial_image_path=page.get("aerial_image_path"),
+                aerial_image_mime=page.get("aerial_image_mime"),
+                aerial_image_size=page.get("aerial_image_size"),
+            )
+            payload["id"] = page.get("id") or f"page-{len(page_payloads)}"
+            payload["name"] = page.get("name") or f"Page {len(page_payloads) + 1}"
+            page_payloads.append(payload)
+
+        # Render single-page HTML for the FIRST page using the existing generator
+        # (this gives us full styling + sidebar + lightbox), then post-process
+        # to add multi-page navigation that swaps content on tab click.
+        first = page_payloads[0]
+        first_photos_count = len(first["photos_data"])
+        first_legend_items = [{"color": "none", "label": "Photo"}]  # placeholder
+        markers_by_color = {}
+        colorizer = get_colorizer()
+        marker_bytes = colorizer.get_colored_marker_bytes("none", self.marker_asset_size)
+        markers_by_color["none"] = base64.b64encode(marker_bytes).decode("utf-8")
+
+        # Use a stable adapter through _generate_html with single-page params.
+        single_html = self._generate_html(
+            aerial_src=first["aerial_src"],
+            image_width=first["image_width"],
+            image_height=first["image_height"],
+            markers_html=first["markers_html"],
+            photos_json=json.dumps(first["photos_data"]),
+            markers_by_color=markers_by_color,
+            legend_items=first_legend_items,
+        )
+
+        # Post-process: convert relevant `const` to `let`, inject pages data
+        # and a switchPage function, and inject a tab strip into the body.
+        modified = single_html.replace(
+            "const photos = ", "let photos = ",
+            1,
+        ).replace(
+            "const imageWidth = ", "let imageWidth = ",
+            1,
+        ).replace(
+            "const imageHeight = ", "let imageHeight = ",
+            1,
+        )
+
+        pages_for_js = [
+            {
+                "id": p["id"],
+                "name": p["name"],
+                "photos": p["photos_data"],
+                "aerial_src": p["aerial_src"],
+                "image_width": p["image_width"],
+                "image_height": p["image_height"],
+                "markers_html": p["markers_html"],
+            }
+            for p in page_payloads
+        ]
+        pages_json = json.dumps(pages_for_js)
+
+        # Build the tab strip HTML.
+        tab_buttons = []
+        for idx, p in enumerate(page_payloads):
+            label = html.escape(p["name"])
+            active_attr = ' aria-pressed="true"' if idx == 0 else ' aria-pressed="false"'
+            active_class = " active" if idx == 0 else ""
+            tab_buttons.append(
+                f'<button type="button" class="page-tab{active_class}" data-page-index="{idx}"{active_attr}>{label}</button>'
+            )
+        tab_strip_html = (
+            '<nav id="page-tabs" role="tablist" aria-label="Pages">'
+            + "".join(tab_buttons)
+            + "</nav>"
+        )
+
+        # Tab strip CSS (small, scoped).
+        tab_strip_css = """
+        #page-tabs {
+            display: flex;
+            gap: 6px;
+            padding: 8px 12px;
+            background: #ffffff;
+            border-bottom: 1px solid var(--sidebar-border);
+            overflow-x: auto;
+            flex-shrink: 0;
+        }
+        #page-tabs .page-tab {
+            padding: 6px 14px;
+            border-radius: 999px;
+            border: 1px solid var(--sidebar-border);
+            background: #ffffff;
+            color: #1b1b1b;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        #page-tabs .page-tab.active {
+            background: #1b1b1b;
+            color: #ffffff;
+            border-color: #1b1b1b;
+        }
+        #page-tabs .page-tab:hover:not(.active) {
+            background: #f1efe8;
+        }
+        #content { display: flex; flex-direction: column; }
+        #legend .legend-item.legend-photo .legend-marker {
+            background: transparent;
+            border: 1px dashed #c8c5bd;
+            color: #1b1b1b;
+            font-weight: 700;
+            font-size: 11px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        """
+
+        # Inject the tab strip into the DOM (just inside #content, before #viewport).
+        modified = modified.replace(
+            '<div id="viewport">',
+            tab_strip_html + '\n            <div id="viewport">',
+            1,
+        )
+
+        # Inject CSS for the tab strip into the <style> block.
+        modified = modified.replace(
+            "</style>",
+            tab_strip_css + "\n    </style>",
+            1,
+        )
+
+        # Inject pages data + switchPage script just before the script close tag.
+        switch_script = (
+            "\n        // Multi-page support\n"
+            f"        const __pagesData = {pages_json};\n"
+            "        let __currentPageIndex = 0;\n"
+            "        function __renderPageLegend(idx) {\n"
+            "            const legendEl = document.getElementById('legend');\n"
+            "            if (!legendEl) return;\n"
+            "            const page = __pagesData[idx];\n"
+            "            if (!page) return;\n"
+            "            legendEl.innerHTML = '';\n"
+            "            const heading = document.createElement('div');\n"
+            "            heading.className = 'legend-heading';\n"
+            "            heading.textContent = page.name || 'Photos';\n"
+            "            legendEl.appendChild(heading);\n"
+            "            page.photos.forEach((photo, i) => {\n"
+            "                const btn = document.createElement('button');\n"
+            "                btn.type = 'button';\n"
+            "                btn.className = 'legend-item legend-photo';\n"
+            "                btn.dataset.pageIndex = String(idx);\n"
+            "                btn.dataset.photoIndex = String(i);\n"
+            "                const num = document.createElement('span');\n"
+            "                num.className = 'legend-marker';\n"
+            "                num.textContent = String(i + 1);\n"
+            "                const text = document.createElement('span');\n"
+            "                text.className = 'legend-text';\n"
+            "                text.textContent = photo.filename || ('Photo ' + (i + 1));\n"
+            "                btn.appendChild(num);\n"
+            "                btn.appendChild(text);\n"
+            "                btn.addEventListener('click', () => { showPhoto(i); });\n"
+            "                legendEl.appendChild(btn);\n"
+            "            });\n"
+            "        }\n"
+            "        function __rebindPageMarkerHandlers() {\n"
+            "            document.querySelectorAll('.marker').forEach(marker => {\n"
+            "                marker.addEventListener('click', (e) => {\n"
+            "                    e.stopPropagation();\n"
+            "                    currentPhotoIndex = parseInt(marker.dataset.index, 10);\n"
+            "                    showPhoto(currentPhotoIndex);\n"
+            "                });\n"
+            "                marker.addEventListener('keydown', (e) => {\n"
+            "                    if (e.key === 'Enter' || e.key === ' ') {\n"
+            "                        e.preventDefault();\n"
+            "                        marker.click();\n"
+            "                    }\n"
+            "                });\n"
+            "            });\n"
+            "        }\n"
+            "        function switchPage(idx) {\n"
+            "            if (idx < 0 || idx >= __pagesData.length) return;\n"
+            "            if (idx === __currentPageIndex) return;\n"
+            "            __currentPageIndex = idx;\n"
+            "            const page = __pagesData[idx];\n"
+            "            const aerial = document.getElementById('aerial-image');\n"
+            "            const containerEl = document.getElementById('map-container');\n"
+            "            if (!aerial || !containerEl) return;\n"
+            "            photos = page.photos;\n"
+            "            imageWidth = page.image_width;\n"
+            "            imageHeight = page.image_height;\n"
+            "            aerial.src = page.aerial_src;\n"
+            "            // Replace markers within the container while keeping the aerial img.\n"
+            "            Array.from(containerEl.querySelectorAll('.marker')).forEach(m => m.remove());\n"
+            "            const tmpl = document.createElement('div');\n"
+            "            tmpl.innerHTML = page.markers_html;\n"
+            "            Array.from(tmpl.children).forEach(node => containerEl.appendChild(node));\n"
+            "            __rebindPageMarkerHandlers();\n"
+            "            containerEl.style.width = imageWidth + 'px';\n"
+            "            containerEl.style.height = imageHeight + 'px';\n"
+            "            scale = 1; translateX = 0; translateY = 0;\n"
+            "            if (typeof fitView === 'function') { fitView(); }\n"
+            "            __renderPageLegend(idx);\n"
+            "            currentPhotoIndex = -1;\n"
+            "            document.querySelectorAll('#page-tabs .page-tab').forEach(btn => {\n"
+            "                const matches = parseInt(btn.dataset.pageIndex, 10) === idx;\n"
+            "                btn.classList.toggle('active', matches);\n"
+            "                btn.setAttribute('aria-pressed', matches ? 'true' : 'false');\n"
+            "            });\n"
+            "        }\n"
+            "        document.querySelectorAll('#page-tabs .page-tab').forEach(btn => {\n"
+            "            btn.addEventListener('click', () => {\n"
+            "                const idx = parseInt(btn.dataset.pageIndex, 10);\n"
+            "                if (Number.isFinite(idx)) switchPage(idx);\n"
+            "            });\n"
+            "        });\n"
+            "        // Initial legend render for page 0\n"
+            "        __renderPageLegend(0);\n"
+        )
+        modified = modified.replace(
+            "    </script>",
+            switch_script + "    </script>",
+            1,
+        )
+
+        if return_content:
+            return modified
+        if not output_path:
+            raise ValueError("output_path is required when return_content=False")
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(modified)
+        return output_path
+
     def _create_marker_html(self, index: int, pixel: PixelPoint, color: str = "default") -> str:
         """Create HTML for a single marker with color-specific class."""
         color_class = color.lstrip("#").lower()
