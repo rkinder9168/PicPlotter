@@ -140,6 +140,7 @@ class HTMLMapGenerator:
         project_name: str = "Photo Map",
         marker_size: int = 96,
         proposal_link: Optional[str] = None,
+        download_photos_link: Optional[str] = None,
         client_name: Optional[str] = None,
         client_company: Optional[str] = None,
         client_address: Optional[str] = None,
@@ -155,6 +156,8 @@ class HTMLMapGenerator:
             project_name: Name for the map/project
             marker_size: Size of markers in pixels
             proposal_link: Optional proposal URL to show in the export header
+            download_photos_link: Optional Dropbox (or other) URL where the
+                client can download the source photos
             client_name: Optional client name to show in the export header
             client_company: Optional company name to show in the export header
             client_address: Optional address to show in the export header
@@ -167,6 +170,7 @@ class HTMLMapGenerator:
         self.marker_size = marker_size
         self.marker_asset_size = max(marker_size, self.MARKER_ASSET_SIZE)
         self.proposal_link = proposal_link.strip() if proposal_link else ""
+        self.download_photos_link = download_photos_link.strip() if download_photos_link else ""
         self.client_name = client_name.strip() if client_name else ""
         self.client_company = client_company.strip() if client_company else ""
         self.client_address = client_address.strip() if client_address else ""
@@ -497,6 +501,20 @@ class HTMLMapGenerator:
         project_label = html.escape(self.project_name)
         safe_marker_src = html.escape(plain_marker_src, quote=True)
 
+        prepared_by_html = self._build_prepared_by_html(self._format_multiline)
+        client_info_html = self._build_client_info_html()
+        proposal_link_html = self._build_proposal_link_html()
+        download_link_html = self._build_download_link_html()
+        divider_html = self._build_sidebar_divider_html(
+            has_top=bool(prepared_by_html or logo_html),
+            has_bottom=bool(client_info_html),
+        )
+        sidebar_brand_html = (
+            f'<div id="sidebar-brand">{logo_html}{prepared_by_html}'
+            f'{divider_html}{client_info_html}'
+            f'{proposal_link_html}{download_link_html}</div>'
+        )
+
         return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -536,7 +554,14 @@ class HTMLMapGenerator:
             display: flex;
             flex-direction: column;
             gap: 16px;
-            overflow-y: auto;
+            overflow: hidden;
+            min-height: 0;
+        }}
+        #sidebar-brand {{
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            flex: 0 0 auto;
         }}
         #logo {{
             max-width: 210px;
@@ -546,15 +571,85 @@ class HTMLMapGenerator:
             display: block;
             margin: 0 auto;
         }}
-        #project-title {{
-            font-size: 16px;
-            font-weight: 700;
+        #prepared-by {{
+            width: 100%;
+            padding: 0 4px;
             text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            color: var(--sidebar-text);
+        }}
+        .prepared-name {{
+            font-size: 13px;
+            font-weight: 700;
+            word-break: break-word;
+        }}
+        .prepared-line {{
+            font-size: 12px;
+            word-break: break-word;
+        }}
+        .prepared-line a {{
+            color: #1f6feb;
+            text-decoration: none;
+        }}
+        .prepared-line a:hover {{
+            text-decoration: underline;
+        }}
+        .sidebar-divider {{
+            width: 100%;
+            height: 1px;
+            background: var(--sidebar-border);
+            margin: 4px 0;
+        }}
+        #client-info {{
+            width: 100%;
+            border: 1px solid var(--sidebar-border);
+            border-radius: 6px;
+            padding: 8px 10px;
+            background: #f5f5f5;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }}
+        .client-row {{
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }}
+        .client-label {{
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #6b6b6b;
+        }}
+        .client-value {{
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--sidebar-text);
+            word-break: break-word;
+        }}
+        .sidebar-action-link {{
+            color: #0b0f0d;
+            background: #ffffff;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 6px 10px;
+            border-radius: 4px;
+            text-decoration: none;
+            display: block;
+            text-align: center;
+            border: 1px solid var(--sidebar-border);
+        }}
+        .sidebar-action-link:hover {{
+            text-decoration: underline;
         }}
         #page-nav {{
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
+            flex: 0 0 auto;
         }}
         .page-nav-button {{
             border: 1px solid var(--sidebar-border);
@@ -576,9 +671,11 @@ class HTMLMapGenerator:
             display: flex;
             flex-direction: column;
             gap: 8px;
-            margin-top: auto;
             border-top: 1px solid var(--sidebar-border);
             padding-top: 12px;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
         }}
         .page-legend-heading {{
             font-size: 15px;
@@ -661,18 +758,28 @@ class HTMLMapGenerator:
             pointer-events: none;
         }}
         #controls {{
+            position: absolute;
+            right: 16px;
+            bottom: 16px;
             display: flex;
             gap: 8px;
+            z-index: 50;
         }}
         .control-btn {{
-            flex: 1;
             border: 1px solid var(--sidebar-border);
-            background: #ffffff;
+            background: rgba(255, 255, 255, 0.95);
             color: #1b1b1b;
             border-radius: 6px;
-            padding: 8px 10px;
+            padding: 8px 14px;
             min-height: 40px;
+            min-width: 44px;
             cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+        }}
+        .control-btn:hover {{
+            background: #ffffff;
         }}
         #lightbox {{
             display: none;
@@ -754,14 +861,8 @@ class HTMLMapGenerator:
 <body>
     <div id="layout">
         <aside id="sidebar">
-            {logo_html}
-            <div id="project-title">{project_label}</div>
+            {sidebar_brand_html}
             <div id="page-nav" aria-label="Pages"></div>
-            <div id="controls">
-                <button class="control-btn" id="zoom-in">Zoom +</button>
-                <button class="control-btn" id="zoom-out">Zoom -</button>
-                <button class="control-btn" id="fit-view">Fit</button>
-            </div>
             <div id="page-legend"></div>
         </aside>
         <main id="content">
@@ -769,6 +870,11 @@ class HTMLMapGenerator:
                 <div id="map-container">
                     <img id="aerial-image" alt="Page background" draggable="false">
                     <div id="marker-layer"></div>
+                </div>
+                <div id="controls">
+                    <button class="control-btn" id="zoom-in">Zoom +</button>
+                    <button class="control-btn" id="zoom-out">Zoom -</button>
+                    <button class="control-btn" id="fit-view">Fit</button>
                 </div>
             </div>
             <div id="lightbox" role="dialog" aria-modal="true" aria-hidden="true">
@@ -1272,6 +1378,68 @@ class HTMLMapGenerator:
             "</div>"
         )
 
+    @staticmethod
+    def _format_multiline(value: str) -> str:
+        """Escape and join non-empty lines with <br>."""
+        lines = [line.strip() for line in value.splitlines() if line.strip()]
+        if not lines:
+            return ""
+        return "<br>".join(html.escape(line) for line in lines)
+
+    def _build_client_info_html(self) -> str:
+        """Render the client info sidebar block, or empty string if no fields set."""
+        client_rows = []
+        if self.client_name:
+            client_rows.append(
+                '<div class="client-row">'
+                '<div class="client-label">Client</div>'
+                f'<div class="client-value">{html.escape(self.client_name)}</div>'
+                "</div>"
+            )
+        if self.client_company:
+            client_rows.append(
+                '<div class="client-row">'
+                '<div class="client-label">Company</div>'
+                f'<div class="client-value">{html.escape(self.client_company)}</div>'
+                "</div>"
+            )
+        if self.client_address:
+            formatted_address = self._format_multiline(self.client_address)
+            if formatted_address:
+                client_rows.append(
+                    '<div class="client-row">'
+                    '<div class="client-label">Address</div>'
+                    f'<div class="client-value">{formatted_address}</div>'
+                    "</div>"
+                )
+        if not client_rows:
+            return ""
+        return f'<div id="client-info">{"".join(client_rows)}</div>'
+
+    def _build_proposal_link_html(self) -> str:
+        if not self.proposal_link:
+            return ""
+        safe_link = html.escape(self.proposal_link, quote=True)
+        return (
+            f'<a id="proposal-link" class="sidebar-action-link" '
+            f'href="{safe_link}" target="_blank" rel="noopener">View Proposal</a>'
+        )
+
+    def _build_download_link_html(self) -> str:
+        if not self.download_photos_link:
+            return ""
+        safe_link = html.escape(self.download_photos_link, quote=True)
+        return (
+            f'<a id="download-photos-link" class="sidebar-action-link" '
+            f'href="{safe_link}" target="_blank" rel="noopener">Download Photos</a>'
+        )
+
+    @staticmethod
+    def _build_sidebar_divider_html(has_top: bool, has_bottom: bool) -> str:
+        if has_top and has_bottom:
+            return '<div class="sidebar-divider"></div>'
+        return ""
+
     def _generate_html(
         self,
         aerial_src: str,
@@ -1302,58 +1470,19 @@ class HTMLMapGenerator:
             if logo_src else ""
         )
         project_label = html.escape(self.project_name)
-        proposal_link_html = ""
-        if self.proposal_link:
-            safe_link = html.escape(self.proposal_link, quote=True)
-            proposal_link_html = (
-                f'<a id="proposal-link" href="{safe_link}" target="_blank" rel="noopener">'
-                'Click here to view the <span class="proposal-accent">Proposal</span></a>'
-            )
-
-        def format_client_value(value: str) -> str:
-            lines = [line.strip() for line in value.splitlines() if line.strip()]
-            if not lines:
-                return ""
-            return "<br>".join(html.escape(line) for line in lines)
-
-        client_rows = []
-        if self.client_name:
-            client_rows.append(
-                '<div class="client-row">'
-                '<div class="client-label">Client</div>'
-                f'<div class="client-value">{html.escape(self.client_name)}</div>'
-                "</div>"
-            )
-        if self.client_company:
-            client_rows.append(
-                '<div class="client-row">'
-                '<div class="client-label">Company</div>'
-                f'<div class="client-value">{html.escape(self.client_company)}</div>'
-                "</div>"
-            )
-        if self.client_address:
-            formatted_address = format_client_value(self.client_address)
-            if formatted_address:
-                client_rows.append(
-                    '<div class="client-row">'
-                    '<div class="client-label">Address</div>'
-                    f'<div class="client-value">{formatted_address}</div>'
-                    "</div>"
-                )
-
-        client_info_html = ""
-        if client_rows:
-            client_info_html = f'<div id="client-info">{"".join(client_rows)}</div>'
-
-        prepared_by_html = self._build_prepared_by_html(format_client_value)
-
-        divider_html = ""
-        if (prepared_by_html or logo_html) and client_info_html:
-            divider_html = '<div class="sidebar-divider"></div>'
+        proposal_link_html = self._build_proposal_link_html()
+        download_link_html = self._build_download_link_html()
+        prepared_by_html = self._build_prepared_by_html(self._format_multiline)
+        client_info_html = self._build_client_info_html()
+        divider_html = self._build_sidebar_divider_html(
+            has_top=bool(prepared_by_html or logo_html),
+            has_bottom=bool(client_info_html),
+        )
 
         sidebar_brand_html = (
             f'<div id="sidebar-brand">{logo_html}{prepared_by_html}'
-            f'{divider_html}{client_info_html}{proposal_link_html}</div>'
+            f'{divider_html}{client_info_html}'
+            f'{proposal_link_html}{download_link_html}</div>'
         )
 
         has_marker_images = bool(markers_by_color)
@@ -1412,42 +1541,6 @@ class HTMLMapGenerator:
             '        <div class="legend-heading">Legend</div>\n'
             + "\n        ".join(legend_rows) + "\n    </div>"
             if legend_rows else ""
-        )
-
-        how_to_html = (
-            '<div id="how-to">\n'
-            '        <div class="sidebar-section-title">How to Use</div>\n'
-            '        <div class="howto-list">\n'
-            '            <div class="howto-row">\n'
-            '                <span class="howto-icon" aria-hidden="true">\n'
-            '                    <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">\n'
-            '                        <circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/>\n'
-            '                        <line x1="14.5" y1="14.5" x2="20" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>\n'
-            '                    </svg>\n'
-            '                </span>\n'
-            '                <span class="howto-text"><strong>Zoom in/out</strong>: Scroll</span>\n'
-            '            </div>\n'
-            '            <div class="howto-row">\n'
-            '                <span class="howto-icon" aria-hidden="true">\n'
-            '                    <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">\n'
-            '                        <path d="M7 12v-1a1 1 0 0 1 2 0v1h1V6a1 1 0 0 1 2 0v6h1V7a1 1 0 0 1 2 0v5h1V9a1 1 0 0 1 2 0v7a4 4 0 0 1-4 4h-3a4 4 0 0 1-4-4v-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>\n'
-            '                    </svg>\n'
-            '                </span>\n'
-            '                <span class="howto-text"><strong>Pan</strong>: Click and drag</span>\n'
-            '            </div>\n'
-            '            <div class="howto-row">\n'
-            '                <span class="howto-icon" aria-hidden="true">\n'
-            '                    <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">\n'
-            '                        <rect x="3" y="7" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>\n'
-            '                        <circle cx="12" cy="13" r="3" fill="none" stroke="currentColor" stroke-width="2"/>\n'
-            '                        <rect x="7" y="4" width="4" height="3" rx="1" fill="none" stroke="currentColor" stroke-width="2"/>\n'
-            '                    </svg>\n'
-            '                </span>\n'
-            '                <span class="howto-text"><strong>View Photos</strong>: Click the map markers '
-            '<span class="howto-marker marker-color-default" aria-hidden="true"></span></span>\n'
-            '            </div>\n'
-            '        </div>\n'
-            '    </div>'
         )
 
         return f'''<!DOCTYPE html>
@@ -1932,97 +2025,33 @@ class HTMLMapGenerator:
             flex: 0 0 auto;
         }}
 
-        #how-to {{
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            color: var(--sidebar-text);
-            font-size: var(--legend-font-size);
-            background: transparent;
-            padding: var(--legend-padding-y) var(--legend-padding-x);
-            border-radius: var(--legend-radius);
-            border: none;
-            width: 100%;
-            margin-top: 8px;
-        }}
-
-        #how-to .sidebar-section-title {{
-            color: var(--sidebar-text);
-            font-size: var(--legend-heading-size);
-            font-weight: 700;
-            text-align: center;
-            align-self: stretch;
-            text-transform: none;
-            letter-spacing: 0;
-        }}
-
-        .howto-list {{
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }}
-
-        .howto-row {{
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            line-height: 1.4;
-        }}
-
-        .howto-icon {{
-            width: 25px;
-            height: 25px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            color: #1f6feb;
-            flex: 0 0 auto;
-        }}
-
-        .howto-icon svg {{
-            width: 25px;
-            height: 25px;
-        }}
-
-        .howto-text {{
-            flex: 1;
-        }}
-
-        .howto-marker {{
-            display: inline-block;
-            width: 18px;
-            height: 18px;
-            margin-left: 6px;
-            background-size: contain;
-            background-repeat: no-repeat;
-            vertical-align: middle;
-        }}
-
-        /* Controls */
+        /* Floating zoom/fit controls anchored to the bottom-right of the canvas */
         #controls {{
+            position: absolute;
+            right: 16px;
+            bottom: calc(16px + var(--viewport-bottom-inset, 0px));
             display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 10px;
-            width: 100%;
+            gap: 8px;
+            z-index: 50;
         }}
 
         .control-btn {{
-            background: #0c1412;
-            color: #ffffff;
-            border: 1px solid #1f2b26;
-            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.95);
+            color: #0c1412;
+            border: 1px solid var(--sidebar-border);
+            padding: 8px 14px;
             cursor: pointer;
-            border-radius: 4px;
-            font-size: 12px;
-            transition: background 0.2s;
-            flex: 1 1 90px;
-            min-height: 44px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            min-height: 40px;
             min-width: 44px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+            transition: background 0.2s;
         }}
 
         .control-btn:hover {{
-            background: rgba(0,0,0,0.9);
+            background: #ffffff;
         }}
 
         .control-btn:focus-visible {{
@@ -2043,24 +2072,21 @@ class HTMLMapGenerator:
             margin-top: 12px;
         }}
 
-        #proposal-link {{
+        .sidebar-action-link {{
             color: #0b0f0d;
             background: #ffffff;
             font-size: 14px;
             font-weight: 600;
-            padding: 4px 10px;
+            padding: 6px 10px;
             border-radius: 4px;
             text-decoration: none;
-            display: inline-block;
+            display: block;
+            text-align: center;
             border: 1px solid var(--sidebar-border);
         }}
 
-        #proposal-link:hover {{
+        .sidebar-action-link:hover {{
             text-decoration: underline;
-        }}
-
-        .proposal-accent {{
-            color: #1f6feb;
         }}
 
         #client-info {{
@@ -2386,13 +2412,7 @@ class HTMLMapGenerator:
         <div id="sidebar">
             <button id="sidebar-close" aria-label="Close sidebar">&times;</button>
             {sidebar_brand_html}
-            {how_to_html}
             {legend_html}
-            <div id="controls">
-                <button class="control-btn" id="zoom-in">Zoom +</button>
-                <button class="control-btn" id="zoom-out">Zoom -</button>
-                <button class="control-btn" id="fit-view">Fit</button>
-            </div>
         </div>
         <div id="content">
             <div id="sidebar-scrim" aria-hidden="true"></div>
@@ -2403,6 +2423,11 @@ class HTMLMapGenerator:
                 <div id="map-container">
                     <img id="aerial-image" src="{aerial_src}" alt="Aerial Map" draggable="false">
                     {markers_html}
+                </div>
+                <div id="controls">
+                    <button class="control-btn" id="zoom-in">Zoom +</button>
+                    <button class="control-btn" id="zoom-out">Zoom -</button>
+                    <button class="control-btn" id="fit-view">Fit</button>
                 </div>
             </div>
             <div id="lightbox" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="lightbox-title" aria-describedby="lightbox-note" tabindex="-1">

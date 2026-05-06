@@ -1206,6 +1206,12 @@
                             </div>
 
                             <div>
+                                <label>Download Photos</label>
+                                <input id="download-photos-link" type="text" placeholder="Dropbox URL">
+                                <div class="hint">Optional</div>
+                            </div>
+
+                            <div>
                                 <label>Client</label>
                                 <input id="client-name" type="text">
                             </div>
@@ -1430,6 +1436,7 @@
         const copyUrlBtn = document.getElementById("copy-url");
         const projectNameInput = document.getElementById("project-name");
         const proposalLinkInput = document.getElementById("proposal-link");
+        const downloadPhotosLinkInput = document.getElementById("download-photos-link");
         const clientNameInput = document.getElementById("client-name");
         const clientCompanyInput = document.getElementById("client-company");
         const clientAddressInput = document.getElementById("client-address");
@@ -3519,6 +3526,7 @@
                 name: name,
                 project_name: name,
                 proposal_link: proposalLinkInput.value.trim(),
+                download_photos_link: downloadPhotosLinkInput.value.trim(),
                 client_name: clientNameInput.value.trim(),
                 client_company: clientCompanyInput.value.trim(),
                 client_address: clientAddressInput.value.trim(),
@@ -3551,6 +3559,7 @@
                 const d = result.data;
                 projectNameInput.value = d.project_name || "";
                 proposalLinkInput.value = d.proposal_link || "";
+                downloadPhotosLinkInput.value = d.download_photos_link || "";
                 clientNameInput.value = d.client_name || "";
                 clientCompanyInput.value = d.client_company || "";
                 clientAddressInput.value = d.client_address || "";
@@ -3588,6 +3597,7 @@
             currentProjectName = "";
             projectNameInput.value = "";
             proposalLinkInput.value = "";
+            downloadPhotosLinkInput.value = "";
             clientNameInput.value = "";
             clientCompanyInput.value = "";
             clientAddressInput.value = "";
@@ -5736,6 +5746,7 @@
                     marker_size: editor.markerSize,
                     project_name: projectNameInput.value.trim() || "Photo Map",
                     proposal_link: proposalLinkInput.value.trim(),
+                    download_photos_link: downloadPhotosLinkInput ? downloadPhotosLinkInput.value.trim() : "",
                     client_name: clientNameInput ? clientNameInput.value.trim() : "",
                     client_company: clientCompanyInput ? clientCompanyInput.value.trim() : "",
                     client_address: clientAddressInput ? clientAddressInput.value.trim() : "",
@@ -5762,6 +5773,7 @@
                     heading: editor.heading,
                     project_name: projectNameInput.value.trim() || "Photo Map",
                     proposal_link: proposalLinkInput.value.trim(),
+                    download_photos_link: downloadPhotosLinkInput ? downloadPhotosLinkInput.value.trim() : "",
                     client_name: clientNameInput ? clientNameInput.value.trim() : "",
                     client_company: clientCompanyInput ? clientCompanyInput.value.trim() : "",
                     client_address: clientAddressInput ? clientAddressInput.value.trim() : "",
@@ -5792,6 +5804,7 @@
                 heading: editor.heading,
                 project_name: projectNameInput.value.trim() || "Photo Map",
                 proposal_link: proposalLinkInput.value.trim(),
+                download_photos_link: downloadPhotosLinkInput ? downloadPhotosLinkInput.value.trim() : "",
                 client_name: clientNameInput ? clientNameInput.value.trim() : "",
                 client_company: clientCompanyInput ? clientCompanyInput.value.trim() : "",
                 client_address: clientAddressInput ? clientAddressInput.value.trim() : "",
