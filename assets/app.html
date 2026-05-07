@@ -4621,7 +4621,7 @@
                     && !placed
                     && isEligibleGps(photo)
                     && Boolean(getAutoPixel(photo));
-                if (placed) {
+                if (placed || autoPreview) {
                     placedCount += 1;
                 }
 
@@ -5071,7 +5071,8 @@
             );
             const scaleX = size.width / rotated.width;
             const scaleY = size.height / rotated.height;
-            editor.zoom = Math.min(CUSTOM_MAX_ZOOM, Math.max(CUSTOM_MIN_ZOOM, Math.min(scaleX, scaleY)));
+            const fitScale = Math.min(scaleX, scaleY) * 0.95;
+            editor.zoom = Math.min(CUSTOM_MAX_ZOOM, Math.max(CUSTOM_MIN_ZOOM, fitScale));
             editor.center = {
                 x: editor.customMap.width / 2,
                 y: editor.customMap.height / 2
@@ -5129,7 +5130,7 @@
 
         function fitToMarkers() {
             if (isCustomMode()) {
-                fitToCustomView();
+                fitToCustomImage();
                 scheduleEditorRender();
                 return;
             }
