@@ -5514,6 +5514,11 @@
             }
             editorPageSelect.innerHTML = "";
             editor.pages.forEach((page) => {
+                const pageState = editor.pageStates[page.id];
+                const hasPhotos = Boolean(pageState && Array.isArray(pageState.photos) && pageState.photos.length);
+                if (!hasPhotos && page.id !== editor.activePageId) {
+                    return;
+                }
                 const option = document.createElement("option");
                 option.value = page.id;
                 option.textContent = page.name || "Page";
@@ -6035,9 +6040,15 @@
                     autoplotEnabled: sourcePage.custom_autoplot_enabled !== false
                 };
             });
-            editor.activePageId = state.selectedPageId && editor.pageStates[state.selectedPageId]
+            const firstNonEmptyPage = editor.pages.find((page) => {
+                const ps = editor.pageStates[page.id];
+                return ps && Array.isArray(ps.photos) && ps.photos.length > 0;
+            });
+            const savedState = state.selectedPageId ? editor.pageStates[state.selectedPageId] : null;
+            const savedHasPhotos = Boolean(savedState && Array.isArray(savedState.photos) && savedState.photos.length);
+            editor.activePageId = savedHasPhotos
                 ? state.selectedPageId
-                : (editor.pages[0] ? editor.pages[0].id : null);
+                : (firstNonEmptyPage ? firstNonEmptyPage.id : (editor.pages[0] ? editor.pages[0].id : null));
             populateEditorPageSelect();
             if (editor.activePageId) {
                 applyEditorPageState(editor.activePageId);
