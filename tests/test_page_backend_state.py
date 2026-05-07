@@ -13,7 +13,13 @@ if "webview" not in sys.modules:
 from src.exif_extractor import ImageMetadata
 from PIL import Image
 
-from src.main import AppApi, AppState, _build_multi_page_export_pages, _load_overrides
+from src.main import (
+    AppApi,
+    AppState,
+    _apply_overrides,
+    _build_multi_page_export_pages,
+    _load_overrides,
+)
 from src.photo_groups import GroupAssignments
 from src.photo_pages import DEFAULT_PAGE_ID, PageAssignments
 
@@ -113,6 +119,29 @@ class PageBackendStateTests(unittest.TestCase):
         self.assertEqual(loaded[-2], "page")
         self.assertEqual(page_assignments.get_page("page-custom").name, "Interior")
         self.assertEqual(page_assignments.get_page_for_photo("/photos/a.jpg").id, "page-custom")
+
+    def test_apply_overrides_preserves_assignments_when_pages_payload_lacks_mapping(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = make_state(tmpdir)
+            state.assignment_mode = "page"
+            interior = state.page_assignments.add_page("Interior")
+            state.page_assignments.assign_photo("/photos/b.jpg", interior.id)
+
+            _apply_overrides(
+                state,
+                {
+                    "assignment_mode": "page",
+                    "pages": [
+                        {"id": DEFAULT_PAGE_ID, "name": "Page 1"},
+                        {"id": interior.id, "name": "Interior"},
+                    ],
+                    "page_editor_states": {},
+                },
+            )
+
+        assigned_page = state.page_assignments.get_page_for_photo("/photos/b.jpg")
+        self.assertIsNotNone(assigned_page)
+        self.assertEqual(assigned_page.id, interior.id)
 
     def test_build_multi_page_export_pages_processes_custom_page_offline(self):
         with tempfile.TemporaryDirectory() as tmpdir:

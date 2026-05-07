@@ -142,7 +142,21 @@
         #options-panel {
             flex: 1.2;
             min-height: 0;
-            overflow: auto;
+            overflow: hidden;
+        }
+
+        #options-scroll {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding-right: 4px;
+        }
+
+        #options-actions {
+            flex: 0 0 auto;
         }
 
         .panel-header {
@@ -1163,8 +1177,7 @@
                         </div>
 
                         <div id="options-panel" class="panel">
-                            <h3>Options</h3>
-
+                            <div id="options-scroll">
                             <div>
                                 <div id="settings-toggle" class="settings-toggle">
                                     <span class="arrow">▶</span>
@@ -1301,7 +1314,8 @@
                                 </div>
                             </div>
 
-                            <div class="actions">
+                            </div>
+                            <div id="options-actions" class="actions">
                                 <button id="create-kmz" class="primary">Create KMZ</button>
                                 <button id="open-editor" class="accent">Create Interactive Image</button>
                             </div>

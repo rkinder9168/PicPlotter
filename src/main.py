@@ -2366,6 +2366,7 @@ def _apply_overrides(state: AppState, payload: Dict[str, Any]) -> None:
         state.custom_autoplot_enabled = custom_autoplot_enabled
 
     raw_pages = payload.get("pages")
+    has_page_assignments_payload = isinstance(payload.get("page_assignments"), dict)
     if isinstance(raw_pages, list):
         loaded_pages: Dict[str, PhotoPage] = {}
         for entry in raw_pages:
@@ -2379,13 +2380,24 @@ def _apply_overrides(state: AppState, payload: Dict[str, Any]) -> None:
                 continue
             name = entry.get("name")
             name_value = name.strip() if isinstance(name, str) and name.strip() else page_id
+            existing_page = state.page_assignments.pages.get(page_id)
+            photo_paths = (
+                list(existing_page.photo_paths)
+                if existing_page and not has_page_assignments_payload
+                else []
+            )
             loaded_pages[page_id] = PhotoPage(
                 id=page_id,
                 name=name_value,
+                photo_paths=photo_paths,
                 locked=bool(entry.get("locked")) or page_id == DEFAULT_PAGE_ID,
                 editor_state=_load_page_editor_state(entry),
             )
         if loaded_pages:
+            if not has_page_assignments_payload:
+                for existing_id, existing_page in state.page_assignments.pages.items():
+                    if existing_id not in loaded_pages:
+                        loaded_pages[existing_id] = existing_page
             state.page_assignments = PageAssignments(loaded_pages)
 
     page_editor_states = payload.get("page_editor_states")
