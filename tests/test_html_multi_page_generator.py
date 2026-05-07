@@ -70,6 +70,55 @@ class MultiPageHTMLGeneratorTests(unittest.TestCase):
         self.assertIn("Front door", html)
         self.assertIn("Kitchen", html)
 
+    def test_multi_page_output_includes_mobile_chrome_and_behavior(self):
+        generator = HTMLMapGenerator(project_name="Mobile Chrome Test", marker_size=64)
+
+        html = generator.generate_multi_page_html(
+            [
+                {
+                    "id": "page-1",
+                    "name": "Page 1",
+                    "aerial_image_bytes": png_bytes((255, 255, 255)),
+                    "aerial_image_mime": "image/png",
+                    "aerial_image_size": (8, 8),
+                    "photos": [
+                        {
+                            "filepath": "/photos/a.jpg",
+                            "filename": "a.jpg",
+                            "image_data": jpg_bytes((255, 0, 0)),
+                        }
+                    ],
+                    "marker_pixels": [PixelPoint(2, 3)],
+                }
+            ],
+            return_content=True,
+        )
+
+        # Mobile chrome elements
+        self.assertIn('id="sidebar-toggle"', html)
+        self.assertIn('id="sidebar-scrim"', html)
+        self.assertIn('id="sidebar-close"', html)
+
+        # Responsive CSS variable + breakpoints
+        self.assertIn("--viewport-bottom-inset", html)
+        self.assertIn("@media (max-width: 900px)", html)
+        self.assertIn("@media (max-width: 480px)", html)
+
+        # Touch handler wiring
+        self.assertIn("touchstart", html)
+        self.assertIn("touchcancel", html)
+
+        # iOS Safari chrome listeners
+        self.assertIn("visualViewport", html)
+        self.assertIn("orientationchange", html)
+
+        # Marker-size inline-style clearing on mobile (regression guard)
+        self.assertIn("removeProperty('--marker-size')", html)
+
+        # Sidebar auto-closes after page tap on mobile (in renderPageNav click handler,
+        # not appended to setActivePage which returns early on no-op).
+        self.assertIn("if (mobileMedia.matches) setSidebarOpen(false)", html)
+
     def test_multi_page_output_uses_plain_marker_not_group_color_classes(self):
         generator = HTMLMapGenerator(project_name="Plain Marker Test", marker_size=64)
 

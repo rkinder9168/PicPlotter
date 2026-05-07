@@ -534,6 +534,7 @@ class HTMLMapGenerator:
             --plain-marker-image: url('{safe_marker_src}');
             --sidebar-border: #e3e1da;
             --sidebar-text: #1b1b1b;
+            --viewport-bottom-inset: 0px;
         }}
         body {{
             overflow: hidden;
@@ -841,19 +842,227 @@ class HTMLMapGenerator:
             min-height: 44px;
             cursor: pointer;
         }}
-        @media (max-width: 820px) {{
+        .nav-icon {{
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            line-height: 1;
+        }}
+        .nav-label {{
+            display: inline;
+        }}
+        #sidebar-close {{
+            display: none;
+            position: sticky;
+            top: 0;
+            align-self: flex-end;
+            margin-left: auto;
+            width: 44px;
+            height: 44px;
+            border-radius: 22px;
+            border: 1px solid var(--sidebar-border);
+            background: #ffffff;
+            color: #1b1b1b;
+            font-size: 24px;
+            line-height: 1;
+            cursor: pointer;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+        }}
+        #sidebar-close:focus-visible {{
+            outline: 2px solid #1f6feb;
+            outline-offset: 2px;
+        }}
+        #sidebar-toggle {{
+            display: none;
+            position: fixed;
+            top: 12px;
+            left: 12px;
+            z-index: 900;
+            background: rgba(12, 20, 18, 0.92);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            cursor: pointer;
+            min-height: 44px;
+            min-width: 44px;
+            align-items: center;
+            justify-content: center;
+        }}
+        #sidebar-toggle:focus-visible {{
+            outline: 2px solid #1f6feb;
+            outline-offset: 2px;
+        }}
+        #sidebar-scrim {{
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 850;
+        }}
+        body.sidebar-open #sidebar-scrim {{
+            opacity: 1;
+            pointer-events: auto;
+        }}
+        @media (max-width: 1200px) and (min-width: 901px) {{
             :root {{
-                --sidebar-width: 100vw;
-                --marker-size: clamp(52px, 15vw, {self.marker_size}px);
+                --sidebar-width: clamp(200px, 22vw, 240px);
+                --marker-size: clamp(72px, 6vw, {self.marker_size}px);
+            }}
+            #sidebar {{
+                padding: 16px;
+            }}
+        }}
+        @media (max-width: 900px) {{
+            :root {{
+                --marker-size: clamp(56px, 14vw, 80px);
+                --marker-font-size: clamp(12px, 3vw, 18px);
             }}
             #layout {{
                 grid-template-columns: 1fr;
-                grid-template-rows: auto 1fr;
+                grid-template-rows: 1fr;
             }}
             #sidebar {{
-                max-height: 36vh;
-                border-right: none;
-                border-bottom: 1px solid var(--sidebar-border);
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: min(320px, 86vw);
+                height: 100vh;
+                height: 100dvh;
+                max-height: 100dvh;
+                padding-top: calc(52px + env(safe-area-inset-top));
+                padding-bottom: calc(28px + env(safe-area-inset-bottom) + var(--viewport-bottom-inset));
+                border-right: 1px solid var(--sidebar-border);
+                border-bottom: none;
+                transform: translateX(-105%);
+                transition: transform 0.25s ease;
+                z-index: 950;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }}
+            body.sidebar-open #sidebar {{
+                transform: translateX(0);
+            }}
+            #sidebar-toggle {{
+                display: inline-flex;
+                top: calc(12px + env(safe-area-inset-top));
+                left: calc(12px + env(safe-area-inset-left));
+            }}
+            #sidebar-close {{
+                display: inline-flex;
+            }}
+            #sidebar-scrim {{
+                display: block;
+            }}
+            #controls {{
+                display: none;
+            }}
+            #viewport,
+            #map-container {{
+                touch-action: none;
+            }}
+            #page-legend {{
+                flex: 1 1 auto;
+                min-height: 0;
+                overflow-y: visible;
+            }}
+            .page-nav-button {{
+                flex: 1 1 calc(50% - 6px);
+                min-height: 44px;
+                padding: 10px 12px;
+                font-size: 13px;
+                word-break: break-word;
+            }}
+            #lightbox {{
+                padding: calc(12px + env(safe-area-inset-top)) 12px calc(72px + env(safe-area-inset-bottom) + var(--viewport-bottom-inset));
+            }}
+            #lightbox-img {{
+                max-width: 96vw;
+                max-height: 78vh;
+            }}
+            #lightbox-close {{
+                top: calc(12px + env(safe-area-inset-top));
+                right: calc(12px + env(safe-area-inset-right));
+                width: 44px;
+                height: 44px;
+                font-size: 32px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 1200;
+                background: rgba(0, 0, 0, 0.4);
+                border-radius: 22px;
+            }}
+            #lightbox-note {{
+                max-height: 28vh;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                font-size: 12px;
+            }}
+            #lightbox-nav {{
+                top: 50%;
+                bottom: auto;
+                left: 0;
+                right: 0;
+                transform: translateY(-50%);
+                justify-content: space-between;
+                padding: 0 12px;
+                pointer-events: none;
+                gap: 0;
+            }}
+            #lightbox-nav .nav-btn {{
+                pointer-events: auto;
+                width: 44px;
+                height: 44px;
+                padding: 0;
+                border-radius: 999px;
+                font-size: 22px;
+                background: rgba(255, 255, 255, 0.25);
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }}
+            .nav-icon {{
+                display: inline-flex;
+            }}
+            .nav-label {{
+                display: none;
+            }}
+        }}
+        @media (max-width: 480px) {{
+            :root {{
+                --marker-size: clamp(48px, 18vw, 70px);
+                --marker-font-size: clamp(12px, 3.6vw, 16px);
+            }}
+            #sidebar {{
+                width: 100vw;
+            }}
+            .marker::before {{
+                content: "";
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                width: calc(var(--marker-size) + 16px);
+                height: calc(var(--marker-size) + 16px);
+                transform: translate(-50%, -50%);
+                border-radius: 999px;
+                background: transparent;
+                pointer-events: auto;
+            }}
+        }}
+        @media (max-width: 900px) and (orientation: landscape) {{
+            #sidebar {{
+                width: min(300px, 70vw);
             }}
         }}
     </style>
@@ -861,11 +1070,14 @@ class HTMLMapGenerator:
 <body>
     <div id="layout">
         <aside id="sidebar">
+            <button id="sidebar-close" type="button" aria-label="Close sidebar">&times;</button>
             {sidebar_brand_html}
             <div id="page-nav" aria-label="Pages"></div>
             <div id="page-legend"></div>
         </aside>
         <main id="content">
+            <div id="sidebar-scrim" aria-hidden="true"></div>
+            <button id="sidebar-toggle" type="button" aria-label="Toggle sidebar" aria-expanded="false" aria-controls="sidebar">Menu</button>
             <div id="viewport">
                 <div id="map-container">
                     <img id="aerial-image" alt="Page background" draggable="false">
@@ -884,8 +1096,14 @@ class HTMLMapGenerator:
                 <div id="lightbox-index"></div>
                 <div id="lightbox-note"></div>
                 <div id="lightbox-nav">
-                    <button class="nav-btn" id="prev-btn" type="button">&larr; Previous</button>
-                    <button class="nav-btn" id="next-btn" type="button">Next &rarr;</button>
+                    <button class="nav-btn" id="prev-btn" type="button" aria-label="Previous photo">
+                        <span class="nav-icon" aria-hidden="true">&larr;</span>
+                        <span class="nav-label">&larr; Previous</span>
+                    </button>
+                    <button class="nav-btn" id="next-btn" type="button" aria-label="Next photo">
+                        <span class="nav-icon" aria-hidden="true">&rarr;</span>
+                        <span class="nav-label">Next &rarr;</span>
+                    </button>
                 </div>
             </div>
         </main>
@@ -901,6 +1119,11 @@ class HTMLMapGenerator:
         let isPanning = false;
         let startX = 0;
         let startY = 0;
+        let isPinching = false;
+        let pinchStartDistance = 0;
+        let pinchStartScale = 1;
+        let lastViewportWidth = 0;
+        let lastViewportHeight = 0;
 
         const pageNav = document.getElementById('page-nav');
         const pageLegend = document.getElementById('page-legend');
@@ -913,9 +1136,14 @@ class HTMLMapGenerator:
         const lightboxTitle = document.getElementById('lightbox-title');
         const lightboxIndex = document.getElementById('lightbox-index');
         const lightboxNote = document.getElementById('lightbox-note');
+        const lightboxNav = document.getElementById('lightbox-nav');
         const closeBtn = document.getElementById('lightbox-close');
         const prevBtn = document.getElementById('prev-btn');
         const nextBtn = document.getElementById('next-btn');
+        const sidebarToggle = document.getElementById('sidebar-toggle');
+        const sidebarClose = document.getElementById('sidebar-close');
+        const sidebarScrim = document.getElementById('sidebar-scrim');
+        const mobileMedia = window.matchMedia('(max-width: 900px)');
 
         function activePage() {{
             return pageData[activePageIndex] || pageData[0];
@@ -944,7 +1172,10 @@ class HTMLMapGenerator:
                 button.dataset.pageId = page.id;
                 button.textContent = page.name;
                 button.classList.toggle('active', index === activePageIndex);
-                button.addEventListener('click', () => setActivePage(index));
+                button.addEventListener('click', () => {{
+                    setActivePage(index);
+                    if (mobileMedia.matches) setSidebarOpen(false);
+                }});
                 pageNav.appendChild(button);
             }});
         }}
@@ -994,10 +1225,7 @@ class HTMLMapGenerator:
             const page = activePage();
             container.style.width = `${{page.width}}px`;
             container.style.height = `${{page.height}}px`;
-            if (page.markerSize) {{
-                document.documentElement.style.setProperty('--marker-size', `${{page.markerSize}}px`);
-                document.documentElement.style.setProperty('--marker-font-size', `${{Math.max(12, Math.round(page.markerSize * 0.29))}}px`);
-            }}
+            syncMarkerSizeForViewport(page);
             aerialImage.src = page.aerialSrc;
             aerialImage.style.width = `${{page.width}}px`;
             aerialImage.style.height = `${{page.height}}px`;
@@ -1031,6 +1259,7 @@ class HTMLMapGenerator:
             lightbox.classList.add('active');
             lightbox.setAttribute('aria-hidden', 'false');
             updateNavButtons();
+            requestAnimationFrame(updateLightboxLayout);
         }}
 
         function closeLightbox() {{
@@ -1062,6 +1291,107 @@ class HTMLMapGenerator:
             updateTransform();
         }}
 
+        function getTouchDistance(touches) {{
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.hypot(dx, dy);
+        }}
+
+        function getTouchCenter(touches) {{
+            return {{
+                x: (touches[0].clientX + touches[1].clientX) / 2,
+                y: (touches[0].clientY + touches[1].clientY) / 2,
+            }};
+        }}
+
+        function syncMarkerSizeForViewport(page) {{
+            const root = document.documentElement;
+            if (mobileMedia.matches) {{
+                root.style.removeProperty('--marker-size');
+                root.style.removeProperty('--marker-font-size');
+                return;
+            }}
+            if (page && page.markerSize) {{
+                root.style.setProperty('--marker-size', `${{page.markerSize}}px`);
+                root.style.setProperty('--marker-font-size', `${{Math.max(12, Math.round(page.markerSize * 0.29))}}px`);
+            }} else {{
+                root.style.removeProperty('--marker-size');
+                root.style.removeProperty('--marker-font-size');
+            }}
+        }}
+
+        function setSidebarOpen(isOpen) {{
+            document.body.classList.toggle('sidebar-open', isOpen);
+            if (!sidebarToggle) return;
+            sidebarToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            sidebarToggle.textContent = isOpen ? 'Close' : 'Menu';
+        }}
+
+        function syncSidebarToggle() {{
+            if (!sidebarToggle) return;
+            if (!mobileMedia.matches) {{
+                document.body.classList.remove('sidebar-open');
+                sidebarToggle.setAttribute('aria-expanded', 'false');
+                sidebarToggle.textContent = 'Menu';
+            }}
+        }}
+
+        function updateViewportInsets() {{
+            if (!window.visualViewport) {{
+                document.documentElement.style.setProperty('--viewport-bottom-inset', '0px');
+                return;
+            }}
+            const vv = window.visualViewport;
+            const bottomInset = Math.max(0, window.innerHeight - (vv.height + vv.offsetTop));
+            document.documentElement.style.setProperty('--viewport-bottom-inset', `${{bottomInset}}px`);
+        }}
+
+        function updateLightboxLayout() {{
+            if (!lightbox.classList.contains('active')) return;
+            const styles = window.getComputedStyle(lightbox);
+            const paddingTop = parseFloat(styles.paddingTop) || 0;
+            const paddingBottom = parseFloat(styles.paddingBottom) || 0;
+            const titleH = lightboxTitle.offsetHeight || 0;
+            const indexH = lightboxIndex.offsetHeight || 0;
+            const noteH = lightboxNote.style.display === 'none' ? 0 : (lightboxNote.offsetHeight || 0);
+            const navH = lightboxNav ? lightboxNav.offsetHeight || 0 : 0;
+            const isMobile = mobileMedia.matches;
+            const chrome = isMobile ? 64 : 100;
+            const available = (lightbox.clientHeight || window.innerHeight) - paddingTop - paddingBottom;
+            const maxHeight = Math.max(160, available - titleH - indexH - noteH - (isMobile ? 0 : navH) - chrome);
+            lightboxImg.style.maxHeight = `${{maxHeight}}px`;
+        }}
+
+        function preserveViewOnResize(newWidth, newHeight) {{
+            if (lastViewportWidth === 0 || lastViewportHeight === 0) {{
+                fitToViewport();
+                return;
+            }}
+            const prevCenterX = lastViewportWidth / 2;
+            const prevCenterY = lastViewportHeight / 2;
+            const imageCenterX = (prevCenterX - translateX) / scale;
+            const imageCenterY = (prevCenterY - translateY) / scale;
+            translateX = (newWidth / 2) - imageCenterX * scale;
+            translateY = (newHeight / 2) - imageCenterY * scale;
+            updateTransform();
+        }}
+
+        function handleResize() {{
+            const newWidth = viewport.clientWidth || 1;
+            const newHeight = viewport.clientHeight || 1;
+            if (lastViewportWidth === 0 || lastViewportHeight === 0) {{
+                fitToViewport();
+            }} else {{
+                preserveViewOnResize(newWidth, newHeight);
+            }}
+            lastViewportWidth = newWidth;
+            lastViewportHeight = newHeight;
+            syncSidebarToggle();
+            syncMarkerSizeForViewport(activePage());
+            updateViewportInsets();
+            updateLightboxLayout();
+        }}
+
         viewport.addEventListener('wheel', (event) => {{
             event.preventDefault();
             const factor = event.deltaY > 0 ? 0.9 : 1.1;
@@ -1084,6 +1414,73 @@ class HTMLMapGenerator:
             isPanning = false;
         }});
 
+        container.addEventListener('touchstart', (event) => {{
+            if (event.touches.length === 2) {{
+                isPinching = true;
+                isPanning = false;
+                pinchStartDistance = getTouchDistance(event.touches);
+                pinchStartScale = scale;
+                event.preventDefault();
+                return;
+            }}
+            if (event.touches.length !== 1) return;
+            if (event.target.closest('.marker')) return;
+            isPanning = true;
+            startX = event.touches[0].clientX - translateX;
+            startY = event.touches[0].clientY - translateY;
+        }}, {{ passive: false }});
+
+        container.addEventListener('touchmove', (event) => {{
+            if (isPinching && event.touches.length === 2) {{
+                event.preventDefault();
+                if (pinchStartDistance > 0) {{
+                    const distance = getTouchDistance(event.touches);
+                    const center = getTouchCenter(event.touches);
+                    const targetScale = pinchStartScale * (distance / pinchStartDistance);
+                    zoomAt(center.x, center.y, targetScale);
+                }}
+                return;
+            }}
+            if (!isPanning || event.touches.length !== 1) return;
+            event.preventDefault();
+            translateX = event.touches[0].clientX - startX;
+            translateY = event.touches[0].clientY - startY;
+            updateTransform();
+        }}, {{ passive: false }});
+
+        container.addEventListener('touchend', (event) => {{
+            if (event && event.touches) {{
+                if (event.touches.length < 2) {{
+                    isPinching = false;
+                    pinchStartDistance = 0;
+                }}
+                if (event.touches.length === 0) {{
+                    isPanning = false;
+                }}
+                return;
+            }}
+            isPinching = false;
+            isPanning = false;
+        }});
+
+        container.addEventListener('touchcancel', () => {{
+            isPinching = false;
+            isPanning = false;
+            pinchStartDistance = 0;
+        }});
+
+        if (sidebarToggle) {{
+            sidebarToggle.addEventListener('click', () => {{
+                setSidebarOpen(!document.body.classList.contains('sidebar-open'));
+            }});
+        }}
+        if (sidebarScrim) {{
+            sidebarScrim.addEventListener('click', () => setSidebarOpen(false));
+        }}
+        if (sidebarClose) {{
+            sidebarClose.addEventListener('click', () => setSidebarOpen(false));
+        }}
+
         document.getElementById('zoom-in').addEventListener('click', () => {{
             zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, scale * 1.3);
         }});
@@ -1103,9 +1500,24 @@ class HTMLMapGenerator:
             if (event.key === 'ArrowLeft') navigatePhoto(-1);
             if (event.key === 'ArrowRight') navigatePhoto(1);
         }});
-        window.addEventListener('resize', fitToViewport);
+        window.addEventListener('resize', handleResize);
+        window.addEventListener('orientationchange', () => {{
+            handleResize();
+            setTimeout(handleResize, 200);
+        }});
+        if (window.visualViewport) {{
+            window.visualViewport.addEventListener('resize', () => {{
+                updateViewportInsets();
+                updateLightboxLayout();
+            }});
+            window.visualViewport.addEventListener('scroll', () => {{
+                updateViewportInsets();
+                updateLightboxLayout();
+            }});
+        }}
 
         renderPage();
+        handleResize();
     </script>
 </body>
 </html>'''
