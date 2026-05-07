@@ -151,9 +151,10 @@ Drive folder URL
 ## Build Configuration
 
 ### CI (GitHub Actions)
-- Triggered manually via `workflow_dispatch`
+- Triggered automatically on push to `main`; also available via `workflow_dispatch`
+- Concurrency group `build-installers` cancels any in-flight run when a new push lands
 - Reads version from `src/__init__.py`
-- Creates GitHub Release with tag `v{version}`
+- Creates GitHub Release with tag `v{version}` bound to the build SHA, then a final `publish` job promotes it to draft=false + latest after both installer jobs upload
 - Windows: PyInstaller `--onefile` + Inno Setup installer
 - macOS: PyInstaller `--onedir` + DMG
 
@@ -212,7 +213,7 @@ Page mode is implemented in `src/photo_pages.py` and integrated through `src/mai
 - `PageEditorState` — `map_source` (`tiles` or `custom`), `gps_overrides`, `custom_map_path`, `custom_marker_overrides`, `custom_autoplot_enabled`, `heading`, `custom_heading`, `tile_view`, `custom_view`. Each page is independently calibratable and rotatable.
 - `PageAssignments` — owns the page dict, with `assign_photo`, `unassign_photo`, `add_page`, `remove_page` (reassigns to Page 1), `rename_page`, `prune_to_photos` (removes stale paths from pages and editor state), and `auto_assign_unassigned` (Page 1 catches everything by default).
 - `AppState.assignment_mode` (`"group"` | `"page"`) selects which mode drives the editor and exports. Group mode data is untouched while Page mode is active and vice versa.
-- `HTMLMapGenerator.generate_multi_page_html()` builds a single self-contained HTML containing every page's background, photos, marker pixels, and legend; the deliverable's JS swaps backgrounds, marker overlays, lightbox scope, and legend rows on page change.
+- `HTMLMapGenerator.generate_multi_page_html()` builds a single self-contained HTML containing every page's background, photos, marker pixels, and legend; the deliverable's JS swaps backgrounds, marker overlays, lightbox scope, and legend rows on page change. The deliverable is mobile-responsive (slide-out sidebar, touch pan/pinch, safe-area-aware lightbox).
 - `marker_utils.get_plain_marker_bytes()` (called from the multi-page generator) returns the user's logo without the colored rectangle outline — Page mode has no per-group color.
 - Page state persists in `map_overrides.json` and saved projects with backward-compatible defaults so older projects load as Group mode with no pages.
 

@@ -34,7 +34,7 @@
    cd \\wsl$\Ubuntu\home\rkinder9168\projects\PicPlotter_web_claude
    python build/build.py
    ```
-4. **CI Build** - GitHub Actions `Build Installers` workflow (manual dispatch) creates Windows `.exe` installer and macOS `.dmg`, attached to a GitHub Release.
+4. **CI Build** - GitHub Actions `Build Installers` workflow runs automatically on every push to `main` (and on manual dispatch); creates Windows `.exe` installer and macOS `.dmg`, attached to a GitHub Release.
 
 ---
 
@@ -86,7 +86,7 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 ├── packaging/
 │   ├── windows/PicPlotterAuto.iss  # Inno Setup installer script
 │   └── macos/build_dmg.sh          # macOS DMG builder
-├── .github/workflows/build.yml # CI: build installers on manual dispatch
+├── .github/workflows/build.yml # CI: build installers on push to main / manual dispatch
 ├── PicPlotter.spec             # PyInstaller spec (local Windows build)
 ├── requirements.txt            # Python dependencies
 ├── build_windows.bat           # One-click Windows build
@@ -135,7 +135,7 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 - Supports both base64-embedded photos (`image_data`) and URL-referenced photos (`image_url`)
 - Renders the user's logo in the sidebar header and an optional "Prepared by" block (`company_name`, `company_address`, `company_phone`, `company_website`) alongside the existing client info
 - Marker numbers render as a small white badge in the lower-right corner of each marker so they remain readable against any logo
-- `generate_multi_page_html()` builds a single self-contained multi-page deliverable for Page mode: ordered `pages[]` payload (id, name, background, dimensions, photos, marker pixels, legend); deliverable JS swaps background, markers, lightbox scope, and legend on page change
+- `generate_multi_page_html()` builds a single self-contained multi-page deliverable for Page mode: ordered `pages[]` payload (id, name, background, dimensions, photos, marker pixels, legend); deliverable JS swaps background, markers, lightbox scope, and legend on page change. The deliverable is mobile-responsive — slide-out sidebar with scrim under 900px, pinch-to-zoom + one-finger pan via touch handlers, `env(safe-area-inset-*)` padding, and a `visualViewport` listener that keeps the lightbox usable as iOS Safari's URL bar collapses
 
 ### `src/marker_utils.py`
 - Loads the marker base image — prefers the user-uploaded logo, falls back to the bundled `marker_outlined_transparent.png`

@@ -119,6 +119,8 @@ Switch from grouping by color to organizing photos into named pages — useful w
 4. Open the map editor — a page selector appears in the sidebar. Each page has its own background (Auto satellite or Custom image), view, rotation, and marker placements
 5. Export the HTML — the deliverable is a single multi-page interactive file with page navigation and a per-page legend
 
+The multi-page HTML adapts to phones and tablets: sidebar collapses into a hamburger drawer, pinch-to-zoom and one-finger pan work on the map, and the lightbox respects iOS safe areas.
+
 Group mode and Page mode data are preserved independently; switching modes does not delete the inactive mode's state. Page mode markers use your standard logo without a colored outline. KMZ export remains group/placement based.
 
 ## Branding (Logo + Company Info)
@@ -231,7 +233,7 @@ The executable will be created in the `dist` folder.
 
 ## CI/CD
 
-The GitHub Actions workflow (`.github/workflows/build.yml`) builds Windows and macOS installers on manual dispatch:
+The GitHub Actions workflow (`.github/workflows/build.yml`) builds Windows and macOS installers automatically on every push to `main`. To trigger a rebuild without a code change, dispatch it manually:
 
 1. Go to the repo's **Actions** tab
 2. Click **Build Installers** -> **Run workflow**

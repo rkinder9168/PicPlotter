@@ -15,7 +15,7 @@ All planned features implemented. Windows and macOS builds available via GitHub 
 - Tile-based preview matches the export snapshot
 - Manual placement for non-GPS photos and per-photo group labels in the editor
 - Page mode: organize photos into named deliverable pages; multi-page interactive HTML export with per-page background, view, rotation, and legend
-- CI builds Windows `.exe` installer and macOS `.dmg` on manual dispatch
+- CI builds Windows `.exe` installer and macOS `.dmg` automatically on push to `main` (also available via manual dispatch)
 
 ---
 
