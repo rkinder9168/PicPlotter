@@ -3796,6 +3796,17 @@
             deployResultPanel.style.display = "none";
             setProjectDeployLink("");
             projectSelect.value = "";
+            // Drop any cached custom-map state so the next project doesn't
+            // inherit Project A's background image.
+            if (editor.overrideTimer) {
+                clearTimeout(editor.overrideTimer);
+                editor.overrideTimer = null;
+            }
+            editor.customMap = { path: null, uri: null, fileUri: null, width: 0, height: 0, ready: false, name: "" };
+            editor.pageStates = {};
+            if (customImageEl) {
+                customImageEl.removeAttribute("src");
+            }
             // Clear photos via backend
             if (window.pywebview && window.pywebview.api) {
                 const result = await window.pywebview.api.clear_photos();

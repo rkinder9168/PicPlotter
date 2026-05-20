@@ -200,6 +200,12 @@ class AppApi:
         data = _load_project(name)
         if data is None:
             return {"status": "error", "message": f"Project '{name}' not found."}
+
+        # Start from a clean slate so nothing from the previous project leaks in
+        # (e.g. custom_map_path, per-page editor state) when the saved JSON
+        # doesn't carry that field.
+        self._reset_state_for_new_project()
+
         output_folder = data.get("output_folder")
         if output_folder:
             self._state.output_folder = output_folder
@@ -209,13 +215,7 @@ class AppApi:
         loaded_local = 0
         loaded_drive = 0
 
-        # Clear current photos first
-        self._state.selected_files = []
-        self._state.file_metadata = {}
-        self._state.photo_previews = {}
-        self._state.drive_sources = {}
         self._state.drive_folder_url = data.get("drive_folder_url")
-        self._state.drive_access_token = None
 
         drive_sources = data.get("drive_sources", {})
         api_key = get_google_maps_api_key() if drive_sources else None
@@ -764,26 +764,34 @@ class AppApi:
             "name": Path(path).name,
         }
 
+    def _reset_state_for_new_project(self) -> None:
+        """Wipe per-project state so a new project starts from defaults.
+        Persisted to map_overrides.json via the trailing _apply_overrides."""
+        state = self._state
+        state.selected_files = []
+        state.file_metadata = {}
+        state.photo_previews = {}
+        state.drive_sources = {}
+        state.drive_folder_url = None
+        state.drive_access_token = None
+        state.current_project_name = None
+        state.netlify_site_id = None
+        state.netlify_deploy_url = None
+        state.gps_overrides = {}
+        state.custom_marker_overrides = {}
+        state.custom_map_path = None
+        state.custom_autoplot_enabled = True
+        state.heading = 0
+        state.custom_heading = 0
+        state.photo_aliases = {}
+        state.photo_notes = {}
+        state.group_aliases = {}
+        state.group_assignments.clear_all()
+        state.page_assignments.clear_all()
+        _apply_overrides(state, {})
+
     def clear_photos(self) -> Dict[str, Any]:
-        self._state.selected_files = []
-        self._state.file_metadata = {}
-        self._state.photo_previews = {}
-        self._state.drive_sources = {}
-        self._state.drive_folder_url = None
-        self._state.drive_access_token = None
-        self._state.current_project_name = None
-        self._state.netlify_site_id = None
-        self._state.netlify_deploy_url = None
-        _apply_overrides(
-            self._state,
-            {
-                "markers": [],
-                "custom_markers": [],
-                "custom_map_path": "",
-                "custom_heading": 0,
-            },
-        )
-        self._sync_page_assignments()
+        self._reset_state_for_new_project()
         return {
             "status": "ok",
             "assignment_mode": self._state.assignment_mode,
