@@ -40,7 +40,6 @@ from src.config import (
     set_google_maps_api_key,
     get_netlify_token,
     set_netlify_token,
-    get_netlify_site_id,
     get_oauth_client_id,
     set_oauth_client_id,
     get_oauth_client_secret,
@@ -129,6 +128,9 @@ class AppState:
     drive_sources: Dict[str, str]       # virtual_path -> file_id
     drive_folder_url: Optional[str]     # currently imported folder URL
     drive_access_token: Optional[str]   # OAuth access token for private folders
+    current_project_name: Optional[str] = None  # name of the saved project currently loaded, if any
+    netlify_site_id: Optional[str] = None       # Netlify site for the active project (per-project URL)
+    netlify_deploy_url: Optional[str] = None    # last deploy URL for the active project
 
 
 class AppApi:
@@ -155,6 +157,15 @@ class AppApi:
         if not name:
             return {"status": "error", "message": "Project name is required."}
         pages_payload, page_assignments_payload = _serialize_page_state(self._state)
+        existing = _load_project(name) or {}
+        # If renaming away from the previously loaded project, the new file starts fresh —
+        # otherwise carry the live state's site so the per-project URL survives the save.
+        if self._state.current_project_name and self._state.current_project_name != name:
+            preserved_site_id = None
+            preserved_deploy_url = None
+        else:
+            preserved_site_id = self._state.netlify_site_id or existing.get("netlify_site_id")
+            preserved_deploy_url = self._state.netlify_deploy_url or existing.get("netlify_deploy_url")
         data = {
             "project_name": payload.get("project_name", ""),
             "proposal_link": payload.get("proposal_link", ""),
@@ -170,9 +181,18 @@ class AppApi:
             "assignment_mode": self._state.assignment_mode,
             "pages": pages_payload,
             "page_assignments": page_assignments_payload,
+            "netlify_site_id": preserved_site_id,
+            "netlify_deploy_url": preserved_deploy_url,
         }
         _save_project(name, data)
-        return {"status": "ok", "projects": _list_projects()}
+        self._state.current_project_name = name
+        self._state.netlify_site_id = preserved_site_id
+        self._state.netlify_deploy_url = preserved_deploy_url
+        return {
+            "status": "ok",
+            "projects": _list_projects(),
+            "deploy_url": preserved_deploy_url or "",
+        }
 
     def load_project(self, name: str) -> Dict[str, Any]:
         if not name:
@@ -267,12 +287,19 @@ class AppApi:
         self._sync_group_assignments()
         self._sync_page_assignments()
 
+        self._state.current_project_name = name
+        site_id = data.get("netlify_site_id")
+        deploy_url = data.get("netlify_deploy_url")
+        self._state.netlify_site_id = site_id if isinstance(site_id, str) and site_id else None
+        self._state.netlify_deploy_url = deploy_url if isinstance(deploy_url, str) and deploy_url else None
+
         response: Dict[str, Any] = {
             "status": "ok",
             "data": data,
             "photos": self._build_photo_list(),
             "loaded_local": loaded_local,
             "loaded_drive": loaded_drive,
+            "deploy_url": self._state.netlify_deploy_url or "",
         }
         if errors:
             response["warnings"] = errors[:5]
@@ -284,6 +311,10 @@ class AppApi:
         deleted = _delete_project(name)
         if not deleted:
             return {"status": "error", "message": f"Project '{name}' not found."}
+        if self._state.current_project_name == name:
+            self._state.current_project_name = None
+            self._state.netlify_site_id = None
+            self._state.netlify_deploy_url = None
         return {"status": "ok", "projects": _list_projects()}
 
     # ────────────────────────────────────────────────────────────────
@@ -740,6 +771,9 @@ class AppApi:
         self._state.drive_sources = {}
         self._state.drive_folder_url = None
         self._state.drive_access_token = None
+        self._state.current_project_name = None
+        self._state.netlify_site_id = None
+        self._state.netlify_deploy_url = None
         _apply_overrides(
             self._state,
             {
@@ -1446,6 +1480,33 @@ class AppApi:
         except Exception as exc:
             return {"status": "error", "message": str(exc)}
 
+    def _deploy_html_to_netlify(self, token: str, html_content: str, project_name: str) -> Dict[str, Any]:
+        """Run the Netlify deploy, persist the site_id/URL for the active project, and
+        produce the API response dict."""
+        deployer = NetlifyDeployer(token, self._state.netlify_site_id)
+        result = deployer.deploy(html_content, project_name)
+        if not result.success:
+            return {"status": "error", "message": result.error}
+
+        self._state.netlify_site_id = result.site_id
+        self._state.netlify_deploy_url = result.url
+
+        # Persist to the saved project JSON so the link survives session restarts.
+        if self._state.current_project_name:
+            try:
+                stored = _load_project(self._state.current_project_name) or {}
+                stored["netlify_site_id"] = result.site_id
+                stored["netlify_deploy_url"] = result.url
+                _save_project(self._state.current_project_name, stored)
+            except Exception:
+                pass
+
+        return {
+            "status": "ok",
+            "url": result.url,
+            "deployment_id": result.deployment_id,
+        }
+
     def deploy_to_web(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Deploy HTML map to Netlify and return shareable URL."""
         token = get_netlify_token()
@@ -1475,16 +1536,10 @@ class AppApi:
                     return_content=True,
                 )
                 project_name = payload.get("project_name", "Photo Map")
-                deployer = NetlifyDeployer(token, get_netlify_site_id())
-                result = deployer.deploy(html_content, project_name)
-                if result.success:
+                response = self._deploy_html_to_netlify(token, html_content, project_name)
+                if response["status"] == "ok":
                     _apply_overrides(self._state, payload)
-                    return {
-                        "status": "ok",
-                        "url": result.url,
-                        "deployment_id": result.deployment_id,
-                    }
-                return {"status": "error", "message": result.error}
+                return response
 
             map_source = payload.get("map_source", "tiles")
 
@@ -1667,20 +1722,11 @@ class AppApi:
                     return_content=True,
                 )
 
-            # Deploy to Netlify
             project_name = payload.get("project_name", "Photo Map")
-            deployer = NetlifyDeployer(token, get_netlify_site_id())
-            result = deployer.deploy(html_content, project_name)
-
-            if result.success:
+            response = self._deploy_html_to_netlify(token, html_content, project_name)
+            if response["status"] == "ok":
                 _apply_overrides(self._state, payload)
-                return {
-                    "status": "ok",
-                    "url": result.url,
-                    "deployment_id": result.deployment_id,
-                }
-            else:
-                return {"status": "error", "message": result.error}
+            return response
 
         except Exception as exc:
             return {"status": "error", "message": str(exc)}

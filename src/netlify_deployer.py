@@ -24,6 +24,7 @@ class DeployResult:
     success: bool
     url: Optional[str] = None
     deployment_id: Optional[str] = None
+    site_id: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -50,7 +51,10 @@ class NetlifyDeployer:
         """
         try:
             site_id = self._ensure_site()
-            return self._deploy_file(site_id, html_content)
+            result = self._deploy_file(site_id, html_content)
+            if result.success:
+                result.site_id = site_id
+            return result
         except urllib.error.HTTPError as e:
             error_body = ""
             try:
@@ -97,40 +101,27 @@ class NetlifyDeployer:
             )
 
     def _ensure_site(self) -> str:
-        """Ensure a Netlify site exists, creating one if needed. Returns site_id."""
+        """Ensure a Netlify site exists. Reuses self.site_id if it still exists on Netlify;
+        otherwise creates a new site. Never deletes — that would break live client links."""
         if self.site_id:
-            # Delete the old site and recreate to avoid stale CDN caching
             try:
-                self._api_request("DELETE", f"/sites/{self.site_id}")
-            except urllib.error.HTTPError:
-                pass
-            self.site_id = None
+                self._api_request("GET", f"/sites/{self.site_id}")
+                return self.site_id
+            except urllib.error.HTTPError as e:
+                if e.code not in (404, 410):
+                    raise
+                # Site no longer exists on Netlify; fall through and create a new one.
+                self.site_id = None
 
-        # Create new site
-        site_id = self._create_site(self.SITE_NAME)
+        site_id = self._create_site()
         self.site_id = site_id
-
-        # Persist site_id to config
-        try:
-            from src.config import set_netlify_site_id
-            set_netlify_site_id(site_id)
-        except Exception:
-            pass
-
         return site_id
 
-    def _create_site(self, name: str) -> str:
-        """Create a Netlify site, retrying with a unique suffix on 422."""
-        try:
-            result = self._api_request("POST", "/sites", {"name": name})
-            return result["id"]
-        except urllib.error.HTTPError as e:
-            if e.code == 422:
-                # Name taken, retry with unique suffix
-                unique_name = f"{name}-{uuid4().hex[:6]}"
-                result = self._api_request("POST", "/sites", {"name": unique_name})
-                return result["id"]
-            raise
+    def _create_site(self) -> str:
+        """Create a Netlify site with a unique name."""
+        unique_name = f"{self.SITE_NAME}-{uuid4().hex[:8]}"
+        result = self._api_request("POST", "/sites", {"name": unique_name})
+        return result["id"]
 
     def _deploy_file(self, site_id: str, html_content: str) -> DeployResult:
         """Deploy HTML content using the file digest API."""

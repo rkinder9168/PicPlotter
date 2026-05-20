@@ -40,7 +40,6 @@ LOGO_FILE = CONFIG_DIR / "logo.png"
 LOGO_MAX_LONG_EDGE = 512
 API_KEY_FIELD = "google_maps_api_key"
 NETLIFY_TOKEN_FIELD = "netlify_token"
-NETLIFY_SITE_ID_FIELD = "netlify_site_id"
 OAUTH_CLIENT_ID_FIELD = "google_oauth_client_id"
 OAUTH_CLIENT_SECRET_FIELD = "google_oauth_client_secret"
 OAUTH_REFRESH_TOKEN_FIELD = "google_oauth_refresh_token"
@@ -155,32 +154,13 @@ def get_netlify_token() -> Optional[str]:
 
 
 def set_netlify_token(value: str) -> None:
-    """Save the Netlify token to config. Clears site_id when token is cleared."""
+    """Save the Netlify token to config."""
     data = _load_config()
     cleaned = value.strip()
     if cleaned:
         data[NETLIFY_TOKEN_FIELD] = cleaned
     else:
         data.pop(NETLIFY_TOKEN_FIELD, None)
-        data.pop(NETLIFY_SITE_ID_FIELD, None)
-    _save_config(data)
-
-
-def get_netlify_site_id() -> Optional[str]:
-    """Return Netlify site ID from config, if available."""
-    data = _load_config()
-    site_id = data.get(NETLIFY_SITE_ID_FIELD)
-    return site_id.strip() if isinstance(site_id, str) else None
-
-
-def set_netlify_site_id(value: str) -> None:
-    """Save the Netlify site ID to config."""
-    data = _load_config()
-    cleaned = value.strip()
-    if cleaned:
-        data[NETLIFY_SITE_ID_FIELD] = cleaned
-    else:
-        data.pop(NETLIFY_SITE_ID_FIELD, None)
     _save_config(data)
 
 

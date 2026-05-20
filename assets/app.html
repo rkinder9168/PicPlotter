@@ -233,13 +233,82 @@
         .project-controls {
             display: flex;
             gap: 6px;
-            margin-top: 6px;
+            align-items: center;
+        }
+
+        .project-controls .left-group {
+            display: flex;
+            gap: 6px;
+        }
+
+        .project-controls .right-group {
+            display: flex;
+            gap: 6px;
+            margin-left: auto;
         }
 
         .project-controls button {
-            flex: 1;
-            padding: 6px 10px;
+            padding: 6px 14px;
             font-size: 12px;
+            min-width: 72px;
+        }
+
+        .btn-white {
+            background: #ffffff;
+            color: #000000;
+            border: 1px solid #ffffff;
+        }
+
+        .btn-white:hover {
+            background: #f0f0f0;
+        }
+
+        .field-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .field-row > label {
+            flex: 0 0 130px;
+            margin: 0;
+        }
+
+        .field-row > input[type="text"],
+        .field-row > input[type="password"],
+        .field-row > select,
+        .field-row > textarea {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .field-row.quality-row > input[type="range"] {
+            flex: 1 1 auto;
+            min-width: 0;
+            width: auto;
+        }
+
+        .field-row.quality-row > .value {
+            flex: 0 0 auto;
+            min-width: 42px;
+            text-align: right;
+        }
+
+        #project-deploy-link {
+            display: none;
+            margin-top: 6px;
+            font-size: 12px;
+            color: var(--muted);
+            word-break: break-all;
+        }
+
+        #project-deploy-link a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        #project-deploy-link a:hover {
+            text-decoration: underline;
         }
 
         @keyframes save-flash {
@@ -1256,53 +1325,58 @@
                             </div>
 
                             <div>
-                                <label>Saved Projects</label>
-                                <select id="project-select">
-                                    <option value="">(New Project)</option>
-                                </select>
                                 <div class="project-controls">
-                                    <button id="project-save" class="primary">Save</button>
-                                    <button id="project-delete" class="danger">Delete</button>
+                                    <div class="left-group">
+                                        <button id="project-new" class="btn-white">New Project</button>
+                                    </div>
+                                    <div class="right-group">
+                                        <button id="project-save" class="primary">Save</button>
+                                        <button id="project-delete" class="danger">Delete</button>
+                                    </div>
                                 </div>
+                                <div class="field-row" style="margin-top:8px;">
+                                    <label for="project-select">Projects</label>
+                                    <select id="project-select">
+                                        <option value="">(New Project)</option>
+                                    </select>
+                                </div>
+                                <div id="project-deploy-link"></div>
                             </div>
 
-                            <div>
-                                <label>Project Name</label>
+                            <div class="field-row">
+                                <label for="project-name">Project Name</label>
                                 <input id="project-name" type="text" value="Interactive Image">
                             </div>
 
-                            <div>
-                                <label>Proposal Link</label>
-                                <input id="proposal-link" type="text">
-                                <div class="hint">Optional</div>
+                            <div class="field-row">
+                                <label for="proposal-link">Proposal Link</label>
+                                <input id="proposal-link" type="text" placeholder="Optional">
                             </div>
 
-                            <div>
-                                <label>Download Photos</label>
-                                <input id="download-photos-link" type="text" placeholder="Dropbox URL">
-                                <div class="hint">Optional</div>
+                            <div class="field-row">
+                                <label for="download-photos-link">Raw Photos Link</label>
+                                <input id="download-photos-link" type="text" placeholder="Optional">
                             </div>
 
-                            <div>
-                                <label>Client</label>
-                                <input id="client-name" type="text">
+                            <div class="field-row">
+                                <label for="client-name">Client</label>
+                                <input id="client-name" type="text" placeholder="Optional">
                             </div>
 
-                            <div>
-                                <label>Company</label>
-                                <input id="client-company" type="text">
+                            <div class="field-row">
+                                <label for="client-company">Company</label>
+                                <input id="client-company" type="text" placeholder="Optional">
                             </div>
 
-                            <div>
-                                <label>Address</label>
-                                <textarea id="client-address" rows="2"></textarea>
-                                <div class="hint">Optional</div>
+                            <div class="field-row">
+                                <label for="client-address">Address</label>
+                                <textarea id="client-address" rows="2" placeholder="Optional"></textarea>
                             </div>
 
-                            <div>
-                                <label>Image Quality</label>
-                                <input id="quality" type="range" min="5" max="100" value="30">
-                                <div id="quality-value" class="value">30%</div>
+                            <div class="field-row quality-row">
+                                <label for="quality">Image Quality</label>
+                                <input id="quality" type="range" min="5" max="100" value="10">
+                                <div id="quality-value" class="value">10%</div>
                             </div>
 
                             <div>
@@ -1514,6 +1588,8 @@
         const projectSelect = document.getElementById("project-select");
         const projectSaveBtn = document.getElementById("project-save");
         const projectDeleteBtn = document.getElementById("project-delete");
+        const projectNewBtn = document.getElementById("project-new");
+        const projectDeployLinkEl = document.getElementById("project-deploy-link");
         const qualityInput = document.getElementById("quality");
         const qualityValue = document.getElementById("quality-value");
         const outputFolderInput = document.getElementById("output-folder");
@@ -3304,6 +3380,7 @@
                 if (result.status === "ok") {
                     deployUrlInput.value = result.url;
                     deployResultPanel.style.display = "block";
+                    setProjectDeployLink(result.url);
                     setStatus("Deployed successfully!");
                 } else {
                     setStatus("Deploy failed: " + result.message);
@@ -3390,6 +3467,17 @@
             return requestCustomMapImage();
         }
 
+        async function ensureProjectSaved() {
+            const name = projectNameInput.value.trim();
+            if (!name) {
+                setStatus("Enter a Project Name first.", true);
+                projectNameInput.focus();
+                return false;
+            }
+            await saveCurrentProject();
+            return true;
+        }
+
         async function openEditor() {
             if (!window.pywebview || !window.pywebview.api) {
                 return;
@@ -3398,6 +3486,7 @@
                 setStatus("No photos selected.", true);
                 return;
             }
+            if (!(await ensureProjectSaved())) return;
             setStatus("Preparing editor...");
             const result = await window.pywebview.api.get_editor_state();
             if (!result || result.status !== "ok") {
@@ -3450,6 +3539,7 @@
                 setStatus("No placed photos to export.", true);
                 return;
             }
+            if (!(await ensureProjectSaved())) return;
             setProgress(0);
             setStatus("Preparing KMZ export...");
             createKmzBtn.disabled = true;
@@ -3574,15 +3664,28 @@
         let currentProjectName = "";  // tracks the last saved/loaded project name
 
         function populateProjectSelect(projects, selectName) {
-            projectSelect.innerHTML = '<option value="">(New Project)</option>';
-            (projects || []).forEach(name => {
+            const list = projects || [];
+            const placeholder = list.length ? "Select a project…" : "No saved projects";
+            projectSelect.innerHTML = `<option value="" disabled${selectName ? "" : " selected"}>${placeholder}</option>`;
+            list.forEach(name => {
                 const opt = document.createElement("option");
                 opt.value = name;
                 opt.textContent = name;
                 projectSelect.appendChild(opt);
             });
-            if (selectName != null) {
+            if (selectName) {
                 projectSelect.value = selectName;
+            }
+        }
+
+        function setProjectDeployLink(url) {
+            if (!projectDeployLinkEl) return;
+            if (url) {
+                projectDeployLinkEl.innerHTML = `<strong>Deployed:</strong> <a href="${url}" target="_blank" rel="noopener">${url}</a>`;
+                projectDeployLinkEl.style.display = "block";
+            } else {
+                projectDeployLinkEl.innerHTML = "";
+                projectDeployLinkEl.style.display = "none";
             }
         }
 
@@ -3607,6 +3710,11 @@
             if (result.status === "ok") {
                 currentProjectName = name;
                 populateProjectSelect(result.projects, name);
+                setProjectDeployLink(result.deploy_url || "");
+                if (result.deploy_url) {
+                    deployUrlInput.value = result.deploy_url;
+                    deployResultPanel.style.display = "block";
+                }
                 setStatus(`Project "${name}" saved.`);
                 // Flash the save button for visual feedback
                 projectSaveBtn.textContent = "Saved!";
@@ -3627,6 +3735,14 @@
             const result = await window.pywebview.api.load_project(name);
             if (result.status === "ok") {
                 currentProjectName = name;
+                setProjectDeployLink(result.deploy_url || "");
+                if (result.deploy_url) {
+                    deployUrlInput.value = result.deploy_url;
+                    deployResultPanel.style.display = "block";
+                } else {
+                    deployUrlInput.value = "";
+                    deployResultPanel.style.display = "none";
+                }
                 const d = result.data;
                 projectNameInput.value = d.project_name || "";
                 proposalLinkInput.value = d.proposal_link || "";
@@ -3672,10 +3788,14 @@
             clientNameInput.value = "";
             clientCompanyInput.value = "";
             clientAddressInput.value = "";
-            qualityInput.value = 30;
-            qualityValue.textContent = "30%";
+            qualityInput.value = 10;
+            qualityValue.textContent = "10%";
             outputFolderInput.value = "(Default - same as photos)";
             state.outputFolder = null;
+            deployUrlInput.value = "";
+            deployResultPanel.style.display = "none";
+            setProjectDeployLink("");
+            projectSelect.value = "";
             // Clear photos via backend
             if (window.pywebview && window.pywebview.api) {
                 const result = await window.pywebview.api.clear_photos();
@@ -3691,25 +3811,20 @@
 
         async function onProjectSelectChange() {
             const selected = projectSelect.value;
-            if (selected) {
-                // User picked a saved project — load it
-                await loadProject(selected);
-            } else {
-                // User picked "(New Project)" — prompt if there are photos
-                if (state.photos.length > 0 || projectNameInput.value.trim()) {
-                    const ok = await showConfirm({
-                        title: "Start new project?",
-                        message: "Any unsaved changes will be lost. Save first if needed.",
-                        acceptLabel: "New Project"
-                    });
-                    if (!ok) {
-                        // Revert dropdown to previous selection
-                        projectSelect.value = currentProjectName;
-                        return;
-                    }
-                }
-                await clearForNewProject();
+            if (!selected) return;
+            await loadProject(selected);
+        }
+
+        async function startNewProject() {
+            if (state.photos.length > 0 || projectNameInput.value.trim()) {
+                const ok = await showConfirm({
+                    title: "Start new project?",
+                    message: "Any unsaved changes will be lost. Save first if needed.",
+                    acceptLabel: "New Project"
+                });
+                if (!ok) return;
             }
+            await clearForNewProject();
         }
 
         async function deleteSelectedProject() {
@@ -3729,6 +3844,7 @@
             if (result.status === "ok") {
                 currentProjectName = "";
                 populateProjectSelect(result.projects, "");
+                setProjectDeployLink("");
                 setStatus(`Project "${name}" deleted.`);
             } else {
                 setStatus(result.message || "Delete failed.", true);
@@ -3739,6 +3855,9 @@
         projectSaveBtn.addEventListener("click", saveCurrentProject);
         projectSelect.addEventListener("change", onProjectSelectChange);
         projectDeleteBtn.addEventListener("click", deleteSelectedProject);
+        if (projectNewBtn) {
+            projectNewBtn.addEventListener("click", startNewProject);
+        }
 
         qualityInput.addEventListener("input", () => {
             qualityValue.textContent = `${qualityInput.value}%`;
