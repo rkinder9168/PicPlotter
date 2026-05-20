@@ -156,7 +156,6 @@ class AppApi:
         name = (payload.get("name") or "").strip()
         if not name:
             return {"status": "error", "message": "Project name is required."}
-        pages_payload, page_assignments_payload = _serialize_page_state(self._state)
         existing = _load_project(name) or {}
         # If renaming away from the previously loaded project, the new file starts fresh —
         # otherwise carry the live state's site so the per-project URL survives the save.
@@ -166,6 +165,7 @@ class AppApi:
         else:
             preserved_site_id = self._state.netlify_site_id or existing.get("netlify_site_id")
             preserved_deploy_url = self._state.netlify_deploy_url or existing.get("netlify_deploy_url")
+        overrides_payload = _serialize_overrides_state(self._state)
         data = {
             "project_name": payload.get("project_name", ""),
             "proposal_link": payload.get("proposal_link", ""),
@@ -178,9 +178,7 @@ class AppApi:
             "drive_folder_url": self._state.drive_folder_url,
             "selected_files": list(self._state.selected_files),
             "drive_sources": dict(self._state.drive_sources),
-            "assignment_mode": self._state.assignment_mode,
-            "pages": pages_payload,
-            "page_assignments": page_assignments_payload,
+            **overrides_payload,
             "netlify_site_id": preserved_site_id,
             "netlify_deploy_url": preserved_deploy_url,
         }
@@ -282,8 +280,10 @@ class AppApi:
                 self._state.selected_files.append(filepath)
                 loaded_local += 1
 
-        if data.get("assignment_mode") or data.get("pages") or data.get("page_assignments"):
-            _apply_overrides(self._state, data)
+        # Always replay the saved overrides so group-mode top-level state
+        # (custom_map_path, marker placements, headings, autoplot flag) is
+        # restored — _reset_state_for_new_project() above wiped it.
+        _apply_overrides(self._state, data)
         self._sync_group_assignments()
         self._sync_page_assignments()
 
@@ -2479,6 +2479,15 @@ def _apply_overrides(state: AppState, payload: Dict[str, Any]) -> None:
     _sync_group_assignments_state(state, prune_photos=bool(state.selected_files))
     _sync_page_assignments_state(state, prune_photos=bool(state.selected_files))
 
+    data = _serialize_overrides_state(state)
+    state.overrides_path.parent.mkdir(parents=True, exist_ok=True)
+    state.overrides_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _serialize_overrides_state(state: AppState) -> Dict[str, Any]:
+    """Return the full editor-overrides payload (mirrors map_overrides.json).
+    Used both to persist global overrides and to embed per-project state in
+    the saved project JSON so background image and placements round-trip."""
     markers_payload = []
     for filepath, gps in state.gps_overrides.items():
         markers_payload.append({
@@ -2514,11 +2523,11 @@ def _apply_overrides(state: AppState, payload: Dict[str, Any]) -> None:
     groups_payload, group_assignments_payload = _serialize_group_state(state)
     pages_payload, page_assignments_payload = _serialize_page_state(state)
 
-    data = {
+    return {
         "assignment_mode": state.assignment_mode,
-        "marker_size": marker_size,
-        "heading": heading,
-        "custom_heading": custom_heading,
+        "marker_size": state.marker_size,
+        "heading": state.heading,
+        "custom_heading": state.custom_heading,
         "markers": markers_payload,
         "custom_map_path": state.custom_map_path,
         "custom_markers": custom_markers_payload,
@@ -2531,8 +2540,6 @@ def _apply_overrides(state: AppState, payload: Dict[str, Any]) -> None:
         "page_assignments": page_assignments_payload,
         "photo_notes": photo_notes_payload,
     }
-    state.overrides_path.parent.mkdir(parents=True, exist_ok=True)
-    state.overrides_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def _build_html(state: AppState) -> str:
