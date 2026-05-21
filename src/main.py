@@ -1292,9 +1292,30 @@ class AppApi:
     def save_overrides(self, payload: Dict[str, Any]) -> bool:
         try:
             _apply_overrides(self._state, payload)
+            self._persist_active_project_overrides()
             return True
         except Exception:
             return False
+
+    def _persist_active_project_overrides(self) -> None:
+        """Merge live overrides state into the active project's JSON so the
+        background image and placements survive switching to another project
+        and back. No-op when no saved project is loaded."""
+        name = self._state.current_project_name
+        if not name:
+            return
+        try:
+            stored = _load_project(name)
+            if stored is None:
+                return
+            stored.update(_serialize_overrides_state(self._state))
+            stored["selected_files"] = list(self._state.selected_files)
+            stored["drive_sources"] = dict(self._state.drive_sources)
+            stored["drive_folder_url"] = self._state.drive_folder_url
+            stored["output_folder"] = self._state.output_folder
+            _save_project(name, stored)
+        except Exception:
+            pass
 
     def export_html(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         output_path = self._prompt_html_save_path(payload)
@@ -1499,7 +1520,9 @@ class AppApi:
         self._state.netlify_site_id = result.site_id
         self._state.netlify_deploy_url = result.url
 
-        # Persist to the saved project JSON so the link survives session restarts.
+        # Persist deploy info + the latest overrides state to the saved project JSON
+        # so the link AND the editor configuration survive session restarts.
+        self._persist_active_project_overrides()
         if self._state.current_project_name:
             try:
                 stored = _load_project(self._state.current_project_name) or {}
