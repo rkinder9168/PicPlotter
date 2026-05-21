@@ -31,6 +31,15 @@ This complexity made the app impractical for general public distribution.
 - Local HTML and KMZ exports remain self-contained (download photos automatically)
 - No new Python dependencies (uses stdlib `urllib`)
 
+### v4.0 - Per-Project Netlify URL + Project State Round-Trip
+- Each saved project owns a permanent Netlify `site_id` + deploy URL; redeploys update the same site so client links never expire when other projects are deployed
+- `NetlifyDeployer._ensure_site()` reuses the project's existing site (GET check) or creates a new one with a unique `picplotter-maps-<8hex>` suffix — sites are never deleted (the old "delete then recreate" loop was what nuked other projects' URLs)
+- Saved project JSON now carries the full editor overrides payload (`custom_map_path`, gps + custom-marker placements, headings, autoplot, marker size, groups, page assignments + per-page editor state, aliases/notes), so reloading restores the background image and placements — not just the form fields
+- `_persist_active_project_overrides()` rewrites the project JSON on every debounced editor save and on deploy, so custom backgrounds picked *inside* the editor land in the file
+- `_reset_state_for_new_project()` wipes all per-project state on New Project and on Load Project so nothing leaks across projects (custom background, per-page editor state, headings, autoplot, aliases/notes, groups, pages)
+- Auto-save flow: Create KMZ and Create Interactive Image require a Project Name and save the project before proceeding
+- UI polish: New Project button (white) left of Save/Delete (right), horizontal label+input rows for Project Name / Proposal Link / Raw Photos Link / Client / Company / Address / Image Quality, default Image Quality 10%, "Optional" placeholders replace redundant hint divs, "Saved Projects" → "Projects" and "Download Photos" → "Raw Photos Link", deployed URL surfaced under Save/Delete on the main page
+
 ### v3.3 - Page Mode
 - Photos can be organized into named deliverable pages instead of (or alongside) colored groups
 - New `assignment_mode: "group" | "page"` toggle in the UI; inactive mode's data is preserved, only the active mode drives the editor and exports
@@ -186,11 +195,16 @@ All `src.*` modules must be listed as hidden imports, including `src.google_driv
 
 ## Project Memory
 
-Projects are saved as individual JSON files in `~/.picplotter_auto/projects/{name}.json`. Each project stores:
-- Project name, proposal link, client name, company, address
-- Image quality setting, output folder, Drive folder URL
+Projects are saved as individual JSON files in `~/.picplotter_auto/projects/{name}.json`. Each project stores the full editor state so a reload restores exactly what the user left, including the deployed link.
 
-The UI provides a dropdown selector with Save/Load/Delete controls above the project fields. The project list is populated from the initial state on launch and updated dynamically after save/delete operations.
+- Form fields: project name, proposal link, raw photos link, client name, company, address
+- Image quality setting, output folder, Drive folder URL, `selected_files`, `drive_sources`
+- Full editor overrides (via `_serialize_overrides_state` — the same payload `_apply_overrides` writes to `map_overrides.json`): `assignment_mode`, marker_size, heading, custom_heading, markers (gps overrides), custom_map_path, custom_markers (pixel placements), custom_autoplot_enabled, photo_aliases, groups, group_assignments, group_aliases, pages (with per-page editor state), page_assignments, photo_notes
+- Netlify per-project state: `netlify_site_id`, `netlify_deploy_url`
+
+`_persist_active_project_overrides()` rewrites the project JSON every time the editor's debounced `save_overrides` fires, so the custom background image and placements chosen *inside* the editor land in the project file (not just `map_overrides.json`). The same helper runs after a successful deploy. `load_project` first calls `_reset_state_for_new_project()` (clearing per-page editor state, `custom_map_path`, etc.) and then replays the saved data through `_apply_overrides`, so nothing leaks from the previous project.
+
+The UI surfaces a New Project button (left), a Projects dropdown that loads on selection, Save and Delete buttons (right), and a "Deployed: <link>" line that appears under the buttons whenever the loaded project has a stored Netlify URL. Create KMZ and Create Interactive Image auto-save the project first (requires a Project Name).
 
 ---
 

@@ -4,7 +4,7 @@
 
 ---
 
-## Project Status: Feature Complete (Page Mode merged to main)
+## Project Status: Feature Complete — v4.0.0
 
 All planned features implemented. Windows and macOS builds available via GitHub Actions.
 
@@ -15,6 +15,9 @@ All planned features implemented. Windows and macOS builds available via GitHub 
 - Tile-based preview matches the export snapshot
 - Manual placement for non-GPS photos and per-photo group labels in the editor
 - Page mode: organize photos into named deliverable pages; multi-page interactive HTML export with per-page background, view, rotation, and legend
+- Per-project Netlify URLs: each saved project keeps its own permanent site/URL; redeploys update the same link
+- Full project state (placements, custom background, headings, page state, deploy URL) round-trips through the project JSON
+- Create KMZ / Create Interactive Image auto-save the project first
 - CI builds Windows `.exe` installer and macOS `.dmg` automatically on push to `main` (also available via manual dispatch)
 
 ---
@@ -63,6 +66,18 @@ All planned features implemented. Windows and macOS builds available via GitHub 
 - [x] `assets/app.html` — "Saved Projects" dropdown with Save/Load/Delete buttons
 - [x] `assets/app.html` — JS functions to populate dropdown, save/load/delete projects
 - [x] Saves: project name, proposal link, client name, company, address, quality, output folder, Drive folder URL
+
+### Phase 16: Per-Project Netlify URL + Full Project State Round-Trip (v4.0.0)
+- [x] `src/netlify_deployer.py` — `_ensure_site()` reuses an existing `site_id` via GET (handles 404/410), creates a new site with a `picplotter-maps-<8hex>` suffix when none. Removed the destructive "delete then recreate" loop. `DeployResult` now carries `site_id`.
+- [x] `src/config.py` — dropped global `get/set_netlify_site_id` + `NETLIFY_SITE_ID_FIELD`; `set_netlify_token("")` no longer wipes site IDs (they're per-project now).
+- [x] `src/main.py` — `AppState` gains `current_project_name`, `netlify_site_id`, `netlify_deploy_url`; `_deploy_html_to_netlify()` reuses the active project's site and writes the result back to state + project JSON.
+- [x] `src/main.py` — `_serialize_overrides_state(state)` extracted from `_apply_overrides`; embedded in `save_project` so the project JSON carries the full editor overrides payload (markers, custom_map_path, custom_markers, headings, autoplot, marker_size, groups + group_assignments + group_aliases, pages + page_assignments + per-page editor state, photo_aliases, photo_notes).
+- [x] `src/main.py` — `_persist_active_project_overrides()` rewrites the active project's JSON on every `save_overrides` (editor's debounced save) and on deploy success.
+- [x] `src/main.py` — `_reset_state_for_new_project()` wipes per-project fields (selected_files, gps_overrides, custom_marker_overrides, custom_map_path, headings, autoplot, aliases/notes) and calls `group_assignments.clear_all()` + `page_assignments.clear_all()`. Called from `clear_photos` and `load_project`.
+- [x] `src/main.py` — `load_project` unconditionally replays saved data through `_apply_overrides` so group-mode top-level state is restored alongside per-page editor state.
+- [x] `assets/app.html` — UI restructure: New Project button (`btn-white`) left, Save + Delete right; horizontal `.field-row` layout for Project Name / Proposal Link / Raw Photos Link / Client / Company / Address / Image Quality; "Saved Projects" → "Projects"; "Download Photos" → "Raw Photos Link"; default Image Quality 10%; "Optional" placeholders; deploy link panel under Save/Delete (`#project-deploy-link`).
+- [x] `assets/app.html` — `ensureProjectSaved()` gates `openEditor` and `startKmzExport`; `clearForNewProject()` resets `editor.customMap`, `editor.pageStates`, `customImageEl.src`, and pending `editor.overrideTimer` so stale DOM/state can't bleed through.
+- [x] End-to-end: per-project URL persists across redeploys + sessions; switching between projects keeps each project's background, placements, and deploy URL intact (group+page × tiles+custom).
 
 ### Phase 14: User-Configurable Branding (v3.2.0)
 - [x] `src/config.py` — `get/set_user_logo_from_bytes` (PIL-validated, JPG/PNG only, normalized to PNG ≤ 512px long-edge at `~/.picplotter_auto/logo.png`), `clear_user_logo`, `get/set_company_info` with website normalization (`_normalize_website` auto-prepends `https://`)
@@ -157,7 +172,16 @@ Before distribution, verify:
 
 ## Version History
 
-### Page Mode (unreleased, on main)
+### v4.0.0
+- Per-project Netlify URLs: each saved project owns a permanent `site_id` + deploy URL stored in its JSON; redeploys update the same site so client links don't break when other projects are deployed
+- `NetlifyDeployer` no longer deletes sites — it reuses the project's existing one (or creates a fresh one when missing)
+- Full project state now round-trips through the project JSON: photo placements, custom background image, headings, group + page assignments and per-page editor state, aliases/notes, Netlify URL
+- `_persist_active_project_overrides()` syncs the project JSON on every debounced editor save and on deploy, so anything picked inside the editor (e.g. custom background) lands in the project file
+- `_reset_state_for_new_project()` clears all per-project fields on New Project / Load Project so nothing leaks between projects
+- Create KMZ and Create Interactive Image auto-save the active project first (Project Name required)
+- UI polish: New Project button (white, left) + Save/Delete (right) above the Projects dropdown; horizontal label+input rows for the main fields; default Image Quality 10%; "Optional" placeholders; "Saved Projects" → "Projects", "Download Photos" → "Raw Photos Link"; deployed URL surfaced under Save/Delete on the home page
+
+### Page Mode (released with v4.0.0)
 - New `assignment_mode: "group" | "page"` state with a Group/Page toggle in the UI
 - Photos can be organized into named pages (Page 1 locked as default; deleting a page reassigns its photos to Page 1)
 - Each page owns its own editor state: map source (Auto satellite or Custom image), GPS overrides, custom marker overrides, headings, and tile/custom view

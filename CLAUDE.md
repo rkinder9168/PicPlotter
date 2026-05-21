@@ -5,7 +5,7 @@
 **Project**: PicPlotter Auto (Web/Drive edition)
 **Repo**: `PicPlotter_web_claude`
 **Purpose**: Auto-plot geotagged photos on Google satellite imagery and export KMZ/HTML. Supports Google Drive folder import with URL-referenced web deployments.
-**Status**: Feature complete, v3.2.0 + Page mode (merged to main, unreleased)
+**Status**: Feature complete, v4.0.0 — Page mode + per-project Netlify URL persistence
 **Related Docs**: [PLANNING.md](./PLANNING.md) | [TASKS.md](./TASKS.md) | [docs/page-mode-feature-plan.md](./docs/page-mode-feature-plan.md)
 
 ---
@@ -47,8 +47,8 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 - **Manual corrections** - drag markers for fine-tuning
 - **Google Drive import** - load photos from shared folders; web deploys use URL references (no download/re-upload)
 - **KMZ and HTML exports** - deliver to Google Earth Pro or clients
-- **Deploy to Web** - Netlify deployment with shareable link
-- **Project memory** - save/load project settings (name, client, address, etc.) for reuse
+- **Deploy to Web** - Netlify deployment; each saved project owns a permanent Netlify site_id + URL stored in its JSON, so redeploys update the same site instead of clobbering other projects' links
+- **Project memory** - save/load full per-project state: form fields, photo lists/drive sources, every editor override (`custom_map_path`, gps + custom marker placements, headings, autoplot, marker size, groups, page assignments + per-page editor state), and the Netlify site/URL. `_persist_active_project_overrides()` syncs the project JSON on every debounced editor save and on deploy.
 - **Custom branding** - global logo upload (JPG/PNG) + company info ("Prepared by" block in HTML deliverables); logo serves as the photo marker base, group identity comes from a colored rectangular outline
 - **Page mode** - alternative to colored groups: organize photos into named pages, each with its own background/view/rotation/placements; exports a multi-page interactive HTML with page navigation and per-page legend
 - **Single executable** - one .exe to distribute
@@ -108,6 +108,10 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 - Parallel photo processing with ThreadPoolExecutor
 - `AppState.assignment_mode` (`"group"` | `"page"`) and `page_assignments`; pywebview API for Page mode: `set_assignment_mode`, `get_assignment_state`, `add_page`, `delete_page`, `rename_page`, `assign_photo_page`, `select_page_custom_map_image`
 - `_serialize_page_state()` and `_sync_page_assignments()` keep frontend state in sync; per-page editor state persists in `map_overrides.json` and saved projects with backward-compatible defaults
+- `_serialize_overrides_state(state)` returns the single canonical overrides payload (markers, custom_markers, custom_map_path, headings, autoplot, marker_size, groups, group_assignments, group_aliases, pages, page_assignments, photo_aliases, photo_notes). Used both by `_apply_overrides` to write `map_overrides.json` and by `save_project` to embed the full editor state in the project JSON.
+- `_persist_active_project_overrides()` re-writes the active project's JSON whenever `save_overrides` runs (debounced from the editor) and after a successful deploy. No-op when no saved project is loaded.
+- `_reset_state_for_new_project()` wipes every per-project field on `clear_photos` / `load_project` so a fresh project never inherits the previous one's custom background, placements, or per-page editor state.
+- Per-project Netlify state lives on `AppState.current_project_name`, `netlify_site_id`, `netlify_deploy_url`. `_deploy_html_to_netlify()` reuses the project's existing site (validated via GET) or creates a new one with a unique suffix; never deletes sites. `set_netlify_token("")` no longer clears project URLs.
 
 ### `src/google_drive.py`
 - Google Drive API v3 client using stdlib `urllib` (no extra dependencies)
@@ -118,12 +122,17 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 - `extract_metadata_from_drive()` - EXIF extraction from partial download
 
 ### `src/config.py`
-- Saves/loads Google API keys and Netlify tokens from `~/.picplotter_auto/config.json`
-- Project management: `list_projects()`, `save_project()`, `load_project()`, `delete_project()` — stores projects as JSON in `~/.picplotter_auto/projects/`
+- Saves/loads Google API keys and Netlify tokens from `~/.picplotter_auto/config.json`. The global `netlify_site_id` field is gone — sites live per-project.
+- Project management: `list_projects()`, `save_project()`, `load_project()`, `delete_project()` — stores projects as JSON in `~/.picplotter_auto/projects/`. Each project JSON carries the full editor state (via `_serialize_overrides_state`) plus `netlify_site_id` and `netlify_deploy_url`.
 - Branding (global, not per-project): `get/set_user_logo*` (PIL-validated, normalized to PNG ≤ 512px long-edge at `~/.picplotter_auto/logo.png`), `get/set_company_info` with website normalization
 - Environment variable fallback (`GOOGLE_MAPS_API_KEY`)
 - Centralized constants (TILE_SIZE, EXPORT_MAX_DIM, etc.)
 - Shared `get_asset_path()` for PyInstaller compatibility
+
+### `src/netlify_deployer.py`
+- `NetlifyDeployer(token, site_id)` — `_ensure_site()` GETs the supplied site_id and reuses it if it still exists; on 404/410 (or when no site_id was supplied) creates a new site with a `picplotter-maps-<8hex>` unique name. Never deletes sites — that would break live client links.
+- `DeployResult` carries `site_id` back to the caller so the project JSON can be updated.
+- `verify_token()` confirms a personal access token works.
 
 ### `src/exif_extractor.py`
 - Extracts GPS, timestamp, camera info from EXIF in a single file open

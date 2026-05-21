@@ -21,8 +21,8 @@ Auto-plot Google satellite imagery from your geotagged photos, then export KMZ o
 - **Manual placement for any photo** - click the map to place non-GPS photos
 - **Google Drive import** - load photos from a shared Drive folder; web deploys reference images by URL (no download/re-upload)
 - **KMZ and HTML outputs** - Google Earth Pro and client-ready HTML
-- **Deploy to Web** - instantly deploy interactive maps to Netlify and share a link with clients
-- **Project memory** - save and reload project settings (name, client, address, etc.) so you don't have to retype
+- **Deploy to Web** - instantly deploy interactive maps to Netlify; each project gets its own permanent URL that re-deploys overwrite (clients keep the same link)
+- **Project memory** - save and reload project settings (name, client, address, photo placements, custom background, deployed URL, etc.) so you don't have to retype or re-pick anything
 - **Custom branding** - upload your own logo (JPG/PNG) and enter company contact info; logo appears as photo markers and in the HTML deliverable's "Prepared by" block
 - **Page mode** - organize photos into named deliverable pages; each page owns its own background, view, rotation, and placements, and exports a multi-page interactive HTML with page navigation and per-page legend
 - **Modern dark UI** - single-window experience
@@ -98,14 +98,17 @@ This lets you sign into Google and browse your Drive folders directly from PicPl
 
 **Web deploys** reference photos by URL - no downloading or re-uploading needed, making deployment fast and lightweight. **Local HTML and KMZ exports** automatically download the photos to produce self-contained files.
 
-## Saved Projects
+## Projects
 
-Save your project settings so you can come back and edit later without retyping.
+Save your project settings so you can come back and edit later without retyping or re-picking the background image.
 
-1. Fill in **Project Name**, **Proposal Link**, **Client**, **Company**, **Address**, etc.
-2. Click **Save** — the project appears in the **Saved Projects** dropdown
-3. To reload later, select the project from the dropdown and click **Load**
-4. To remove a saved project, select it and click **Delete**
+1. Fill in **Project Name**, **Proposal Link**, **Raw Photos Link**, **Client**, **Company**, **Address**, etc.
+2. Click **Save** — the project appears in the **Projects** dropdown
+3. To reload later, select the project from the dropdown (it loads on selection)
+4. **New Project** clears the form to start fresh; **Delete** removes the currently selected project
+5. **Create KMZ** and **Create Interactive Image** automatically save the project first (the **Project Name** must be filled in)
+
+Each project's full editor state round-trips: photo placements, custom background image, headings, group/page assignments, and the deployed Netlify URL. After your first **Deploy to Web** the link appears under the Save/Delete buttons so you can copy it any time without re-deploying.
 
 Projects are stored locally at `~/.picplotter_auto/projects/`.
 
@@ -155,10 +158,12 @@ Share interactive maps with clients via a simple link instead of email attachmen
 
 ### Usage
 
-After setup, click "Deploy to Web" in the map editor to get a shareable URL like:
-`https://picplotter-maps.netlify.app`
+After setup, click "Deploy to Web" in the map editor. The first deploy for a project creates a fresh Netlify site with a unique URL like:
+`https://picplotter-maps-a1b2c3d4.netlify.app`
 
-Send this link to clients - they can view the interactive map directly in their browser without downloading anything.
+The URL is stored with the project, so re-deploying the same project (now or in a future session) updates that same site — clients keep the link permanently. Different projects get different sites; deploys never overwrite each other's links.
+
+Send this link to clients — they can view the interactive map directly in their browser without downloading anything.
 
 ## How It Works
 
