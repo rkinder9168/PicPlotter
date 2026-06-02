@@ -148,6 +148,8 @@ class HTMLMapGenerator:
         company_address: Optional[str] = None,
         company_phone: Optional[str] = None,
         company_website: Optional[str] = None,
+        hide_markers: bool = False,
+        hide_sidebar: bool = False,
     ):
         """
         Initialize the HTML map generator.
@@ -178,6 +180,11 @@ class HTMLMapGenerator:
         self.company_address = company_address.strip() if company_address else ""
         self.company_phone = company_phone.strip() if company_phone else ""
         self.company_website = company_website.strip() if company_website else ""
+        # Deployed-image display options.
+        # hide_markers: render invisible (but still clickable) markers with no number badge.
+        # hide_sidebar: drop the sidebar so the map is full-bleed (single-page deliverable only).
+        self.hide_markers = bool(hide_markers)
+        self.hide_sidebar = bool(hide_sidebar)
         self._marker_b64: Optional[str] = None
         self._logo_b64: Optional[str] = None
 
@@ -525,6 +532,9 @@ class HTMLMapGenerator:
             f'{proposal_link_html}{download_link_html}</div>'
         )
 
+        # Page mode keeps its sidebar (it holds the page nav), so only hide_markers applies.
+        body_class = "markers-hidden" if self.hide_markers else ""
+
         return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -751,6 +761,16 @@ class HTMLMapGenerator:
         .marker:hover {{
             transform: scale(1.18);
             z-index: 20;
+        }}
+        body.markers-hidden .marker {{
+            background: none !important;
+            border: none !important;
+        }}
+        body.markers-hidden .marker:hover {{
+            transform: none;
+        }}
+        body.markers-hidden .marker-number {{
+            display: none;
         }}
         .marker-number {{
             position: absolute;
@@ -1087,7 +1107,7 @@ class HTMLMapGenerator:
         }}
     </style>
 </head>
-<body>
+<body class="{body_class}">
     <div id="layout">
         <aside id="sidebar">
             <button id="sidebar-close" type="button" aria-label="Close sidebar">&times;</button>
@@ -2011,6 +2031,13 @@ class HTMLMapGenerator:
             if legend_rows else ""
         )
 
+        body_classes = []
+        if self.hide_markers:
+            body_classes.append("markers-hidden")
+        if self.hide_sidebar:
+            body_classes.append("no-sidebar")
+        body_class = " ".join(body_classes)
+
         return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2053,6 +2080,17 @@ class HTMLMapGenerator:
             grid-template-columns: var(--sidebar-width) 1fr;
             width: 100vw;
             height: 100vh;
+        }}
+
+        body.no-sidebar #layout {{
+            grid-template-columns: 1fr;
+        }}
+
+        body.no-sidebar #sidebar,
+        body.no-sidebar #sidebar-toggle,
+        body.no-sidebar #sidebar-scrim,
+        body.no-sidebar #sidebar-close {{
+            display: none !important;
         }}
 
         #sidebar {{
@@ -2234,6 +2272,20 @@ class HTMLMapGenerator:
             min-width: 1em;
             text-align: center;
             pointer-events: none;
+        }}
+
+        /* Invisible (but still clickable) markers — keep the original aerial look */
+        body.markers-hidden .marker {{
+            background: none !important;
+            border: none !important;
+        }}
+
+        body.markers-hidden .marker:hover {{
+            transform: none;
+        }}
+
+        body.markers-hidden .marker-number {{
+            display: none;
         }}
 
         /* Lightbox */
@@ -2893,7 +2945,7 @@ class HTMLMapGenerator:
 
     </style>
 </head>
-<body>
+<body class="{body_class}">
     <div id="layout">
         <div id="sidebar">
             <button id="sidebar-close" aria-label="Close sidebar">&times;</button>

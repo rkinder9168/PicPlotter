@@ -154,6 +154,8 @@ class AppState:
     current_project_name: Optional[str] = None  # name of the saved project currently loaded, if any
     netlify_site_id: Optional[str] = None       # Netlify site for the active project (per-project URL)
     netlify_deploy_url: Optional[str] = None    # last deploy URL for the active project
+    hide_markers: bool = False                  # deployed image: invisible (but clickable) markers, no number badge
+    hide_sidebar: bool = False                  # deployed single-page image: drop the sidebar (full-bleed map)
 
 
 class AppApi:
@@ -807,6 +809,8 @@ class AppApi:
         state.custom_marker_overrides = {}
         state.custom_map_path = None
         state.custom_autoplot_enabled = True
+        state.hide_markers = False
+        state.hide_sidebar = False
         state.heading = 0
         state.custom_heading = 0
         state.photo_aliases = {}
@@ -1286,6 +1290,8 @@ class AppApi:
                 "pages": pages_payload,
                 "photos": pages_payload[0]["photos"] if pages_payload else [],
                 "marker_size": self._state.marker_size,
+                "hide_markers": self._state.hide_markers,
+                "hide_sidebar": self._state.hide_sidebar,
                 "plain_marker_image": self._build_plain_marker_image(),
             }
 
@@ -1307,6 +1313,8 @@ class AppApi:
             "assignment_mode": "group",
             "photos": photos,
             "marker_size": self._state.marker_size,
+            "hide_markers": self._state.hide_markers,
+            "hide_sidebar": self._state.hide_sidebar,
             "heading": self._state.heading,
             "custom_heading": self._state.custom_heading,
             "custom_map_path": custom_map_path,
@@ -1377,6 +1385,8 @@ class AppApi:
                     client_name=payload.get("client_name"),
                     client_company=payload.get("client_company"),
                     client_address=payload.get("client_address"),
+                    hide_markers=bool(payload.get("hide_markers", self._state.hide_markers)),
+                    hide_sidebar=bool(payload.get("hide_sidebar", self._state.hide_sidebar)),
                     **get_company_info(),
                 )
                 result_path = generator.generate_multi_page_html(
@@ -1431,6 +1441,8 @@ class AppApi:
                     client_name=payload.get("client_name"),
                     client_company=payload.get("client_company"),
                     client_address=payload.get("client_address"),
+                    hide_markers=bool(payload.get("hide_markers", self._state.hide_markers)),
+                    hide_sidebar=bool(payload.get("hide_sidebar", self._state.hide_sidebar)),
                     **get_company_info(),
                 )
 
@@ -1528,6 +1540,8 @@ class AppApi:
                 client_name=payload.get("client_name"),
                 client_company=payload.get("client_company"),
                 client_address=payload.get("client_address"),
+                hide_markers=bool(payload.get("hide_markers", self._state.hide_markers)),
+                hide_sidebar=bool(payload.get("hide_sidebar", self._state.hide_sidebar)),
                 **get_company_info(),
             )
 
@@ -1612,6 +1626,8 @@ class AppApi:
                     client_name=payload.get("client_name"),
                     client_company=payload.get("client_company"),
                     client_address=payload.get("client_address"),
+                    hide_markers=bool(payload.get("hide_markers", self._state.hide_markers)),
+                    hide_sidebar=bool(payload.get("hide_sidebar", self._state.hide_sidebar)),
                     **get_company_info(),
                 )
                 html_content = generator.generate_multi_page_html(
@@ -1680,6 +1696,8 @@ class AppApi:
                     client_name=payload.get("client_name"),
                     client_company=payload.get("client_company"),
                     client_address=payload.get("client_address"),
+                    hide_markers=bool(payload.get("hide_markers", self._state.hide_markers)),
+                    hide_sidebar=bool(payload.get("hide_sidebar", self._state.hide_sidebar)),
                     **get_company_info(),
                 )
 
@@ -1790,6 +1808,8 @@ class AppApi:
                     client_name=payload.get("client_name"),
                     client_company=payload.get("client_company"),
                     client_address=payload.get("client_address"),
+                    hide_markers=bool(payload.get("hide_markers", self._state.hide_markers)),
+                    hide_sidebar=bool(payload.get("hide_sidebar", self._state.hide_sidebar)),
                     **get_company_info(),
                 )
 
@@ -2288,6 +2308,8 @@ def _load_overrides(
     GroupAssignments,
     str,
     PageAssignments,
+    bool,
+    bool,
 ]:
     marker_size = 96
     heading = 0
@@ -2302,6 +2324,8 @@ def _load_overrides(
     group_assignments = GroupAssignments()
     assignment_mode = "group"
     page_assignments = PageAssignments()
+    hide_markers = False
+    hide_sidebar = False
 
     if overrides_path.exists():
         try:
@@ -2310,6 +2334,10 @@ def _load_overrides(
             if raw_assignment_mode in ("group", "page"):
                 assignment_mode = raw_assignment_mode
             marker_size = int(data.get("marker_size", marker_size))
+            if isinstance(data.get("hide_markers"), bool):
+                hide_markers = data["hide_markers"]
+            if isinstance(data.get("hide_sidebar"), bool):
+                hide_sidebar = data["hide_sidebar"]
             heading = int(data.get("heading", heading))
             raw_custom_heading = data.get("custom_heading", heading)
             try:
@@ -2440,12 +2468,18 @@ def _load_overrides(
         group_assignments,
         assignment_mode,
         page_assignments,
+        hide_markers,
+        hide_sidebar,
     )
 
 
 def _apply_overrides(state: AppState, payload: Dict[str, Any]) -> None:
     markers = payload.get("markers")
     marker_size = int(payload.get("marker_size", state.marker_size))
+    if isinstance(payload.get("hide_markers"), bool):
+        state.hide_markers = payload["hide_markers"]
+    if isinstance(payload.get("hide_sidebar"), bool):
+        state.hide_sidebar = payload["hide_sidebar"]
     raw_assignment_mode = payload.get("assignment_mode")
     if raw_assignment_mode in ("group", "page"):
         state.assignment_mode = raw_assignment_mode
@@ -2625,6 +2659,8 @@ def _serialize_overrides_state(state: AppState) -> Dict[str, Any]:
     return {
         "assignment_mode": state.assignment_mode,
         "marker_size": state.marker_size,
+        "hide_markers": state.hide_markers,
+        "hide_sidebar": state.hide_sidebar,
         "heading": state.heading,
         "custom_heading": state.custom_heading,
         "markers": markers_payload,
@@ -2656,6 +2692,8 @@ def _build_html(state: AppState) -> str:
         "oauth_client_secret": get_oauth_client_secret() or "",
         "has_refresh_token": bool(get_oauth_refresh_token()),
         "marker_size": state.marker_size,
+        "hide_markers": state.hide_markers,
+        "hide_sidebar": state.hide_sidebar,
         "heading": state.heading,
         "assignment_mode": state.assignment_mode,
         "heic_supported": HEIC_SUPPORTED,
@@ -3683,6 +3721,8 @@ def main() -> None:
         group_assignments,
         assignment_mode,
         page_assignments,
+        hide_markers,
+        hide_sidebar,
     ) = _load_overrides(overrides_path)
 
     state = AppState(
@@ -3707,6 +3747,8 @@ def main() -> None:
         drive_sources={},
         drive_folder_url=None,
         drive_access_token=None,
+        hide_markers=hide_markers,
+        hide_sidebar=hide_sidebar,
     )
 
     html = _build_html(state)

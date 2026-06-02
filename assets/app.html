@@ -847,6 +847,31 @@
             line-height: 1.4;
         }
 
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text);
+            cursor: pointer;
+        }
+
+        .checkbox-row input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            flex: 0 0 auto;
+            cursor: pointer;
+            accent-color: var(--accent, #2a9d6e);
+        }
+
+        .checkbox-row input[type="checkbox"]:disabled {
+            cursor: not-allowed;
+        }
+
+        .checkbox-row input[type="checkbox"]:disabled + span {
+            opacity: 0.5;
+        }
+
         /* Editor styles */
         #editor-view {
             padding: 0;
@@ -1095,6 +1120,15 @@
             min-width: 1em;
             text-align: center;
             pointer-events: none;
+        }
+
+        /* Invisible-markers preview: dashed circle stands in for the (hidden) logo */
+        .marker.ghost {
+            background-image: none !important;
+            border: 2px dashed rgba(255, 255, 255, 0.9);
+            border-radius: 50%;
+            box-sizing: border-box;
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
         }
 
         .popup-menu {
@@ -1460,6 +1494,19 @@
                             <div id="editor-marker-size-value" class="value">96px</div>
                         </div>
 
+                        <div class="panel" style="gap:10px;">
+                            <label>Display Options</label>
+                            <label class="checkbox-row">
+                                <input id="editor-hide-markers" type="checkbox">
+                                <span>Invisible markers (clean image)</span>
+                            </label>
+                            <label class="checkbox-row">
+                                <input id="editor-hide-sidebar" type="checkbox">
+                                <span>Hide sidebar</span>
+                            </label>
+                            <div id="hide-sidebar-hint" class="hint">Markers stay clickable; numbers are hidden on the deployed image. Hide sidebar applies to single-page exports only.</div>
+                        </div>
+
                         <div class="panel">
                             <button id="export-html" class="primary">Export Interactive Image</button>
                             <button id="deploy-web" class="accent" style="margin-top:8px;">Deploy to Web</button>
@@ -1557,6 +1604,8 @@
             oauthClientSecret: INITIAL_STATE.oauth_client_secret || "",
             hasRefreshToken: INITIAL_STATE.has_refresh_token || false,
             markerSize: INITIAL_STATE.marker_size || 96,
+            hideMarkers: INITIAL_STATE.hide_markers || false,
+            hideSidebar: INITIAL_STATE.hide_sidebar || false,
             heading: INITIAL_STATE.heading || 0,
             outputFolder: null,
             groups: [],
@@ -3925,6 +3974,8 @@
             activePageId: null,
             plainMarkerImage: MARKER_ICON,
             markerSize: state.markerSize,
+            hideMarkers: state.hideMarkers,
+            hideSidebar: state.hideSidebar,
             heading: state.heading,
             tileHeading: state.heading,
             customHeading: state.heading,
@@ -3963,6 +4014,8 @@
         const modeHintEl = document.getElementById("mode-hint");
         const markerSizeInput = document.getElementById("editor-marker-size");
         const markerSizeValue = document.getElementById("editor-marker-size-value");
+        const hideMarkersInput = document.getElementById("editor-hide-markers");
+        const hideSidebarInput = document.getElementById("editor-hide-sidebar");
         const rotationInput = document.getElementById("editor-rotation");
         const rotationValue = document.getElementById("editor-rotation-value");
         const rotateLeftBtn = document.getElementById("rotate-left");
@@ -5057,7 +5110,15 @@
                     : (state.markerImages[color] || MARKER_ICON);
                 marker.style.width = `${editor.markerSize}px`;
                 marker.style.height = `${editor.markerSize}px`;
-                marker.style.backgroundImage = `url(${icon})`;
+                // Invisible markers: show a dashed circle placeholder so the user can still
+                // size/position them. The number badge always stays visible in the editor.
+                if (editor.hideMarkers) {
+                    marker.classList.add("ghost");
+                    marker.style.backgroundImage = "none";
+                } else {
+                    marker.classList.remove("ghost");
+                    marker.style.backgroundImage = `url(${icon})`;
+                }
                 const label = marker.querySelector("span");
                 if (label) {
                     label.textContent = String(index + 1);
@@ -5375,6 +5436,19 @@
             markerSizeValue.textContent = `${editor.markerSize}px`;
             updateMarkerStyles();
             scheduleOverrideSave();
+        }
+
+        function syncDisplayOptionInputs() {
+            if (hideMarkersInput) {
+                hideMarkersInput.checked = !!editor.hideMarkers;
+            }
+            if (hideSidebarInput) {
+                // Hide-sidebar only applies to single-page (group-mode) deliverables.
+                // In Page mode the sidebar holds the page navigation, so disable it there.
+                const pageMode = editor.assignmentMode === "page";
+                hideSidebarInput.disabled = pageMode;
+                hideSidebarInput.checked = pageMode ? false : !!editor.hideSidebar;
+            }
         }
 
         function clampZoom(value) {
@@ -5979,6 +6053,8 @@
                     pages,
                     page_editor_states: buildPageEditorStatesPayload(),
                     marker_size: editor.markerSize,
+                    hide_markers: editor.hideMarkers,
+                    hide_sidebar: editor.hideSidebar,
                     project_name: projectNameInput.value.trim() || "Photo Map",
                     proposal_link: proposalLinkInput.value.trim(),
                     download_photos_link: downloadPhotosLinkInput ? downloadPhotosLinkInput.value.trim() : "",
@@ -6002,6 +6078,8 @@
                     custom_image_path: editor.customMap.path,
                     custom_map_path: editor.customMap.path,
                     marker_size: editor.markerSize,
+                    hide_markers: editor.hideMarkers,
+                    hide_sidebar: editor.hideSidebar,
                     viewport_width: viewport.width,
                     viewport_height: viewport.height,
                     custom_zoom: editor.zoom,
@@ -6034,6 +6112,8 @@
                     height: size.height
                 },
                 marker_size: editor.markerSize,
+                hide_markers: editor.hideMarkers,
+                hide_sidebar: editor.hideSidebar,
                 viewport_width: viewport.width,
                 viewport_height: viewport.height,
                 heading: editor.heading,
@@ -6132,6 +6212,8 @@
                 return {
                     assignment_mode: "page",
                     marker_size: editor.markerSize,
+                    hide_markers: editor.hideMarkers,
+                    hide_sidebar: editor.hideSidebar,
                     page_editor_states: buildPageEditorStatesPayload(),
                     map_source: editor.mapMode
                 };
@@ -6140,6 +6222,8 @@
             const adjustPlacedPhotos = getAdjustPlacedPhotos();
             const payload = {
                 marker_size: editor.markerSize,
+                hide_markers: editor.hideMarkers,
+                hide_sidebar: editor.hideSidebar,
                 heading: editor.tileHeading,
                 custom_heading: editor.customHeading,
                 map_source: editor.mapMode
@@ -6166,6 +6250,8 @@
 
         function editorLoadPageMode(payload) {
             editor.assignmentMode = "page";
+            editor.hideMarkers = !!payload.hide_markers;
+            editor.hideSidebar = !!payload.hide_sidebar;
             editor.pages = (payload.pages || []).map((page) => ({
                 id: page.id,
                 name: page.name || page.display_name || "Page"
@@ -6210,6 +6296,7 @@
                 ? state.selectedPageId
                 : (firstNonEmptyPage ? firstNonEmptyPage.id : (editor.pages[0] ? editor.pages[0].id : null));
             populateEditorPageSelect();
+            syncDisplayOptionInputs();
             if (editor.activePageId) {
                 applyEditorPageState(editor.activePageId);
             }
@@ -6226,6 +6313,8 @@
             editor.activePageId = null;
             editor.photos = (payload.photos || []).map(normalizeEditorPhoto);
             editor.markerSize = payload.marker_size || editor.markerSize;
+            editor.hideMarkers = !!payload.hide_markers;
+            editor.hideSidebar = !!payload.hide_sidebar;
             editor.mapMode = mapMode || MAP_SOURCE_TILES;
             const payloadHeading = Number(payload.heading);
             if (Number.isFinite(payloadHeading)) {
@@ -6279,6 +6368,7 @@
 
             markerSizeInput.value = editor.markerSize;
             markerSizeValue.textContent = `${editor.markerSize}px`;
+            syncDisplayOptionInputs();
             rotationInput.value = editor.heading;
             rotationValue.textContent = `${editor.heading}deg`;
 
@@ -6370,6 +6460,21 @@
         markerSizeInput.addEventListener("input", (event) => {
             applyMarkerSize(event.target.value);
         });
+
+        if (hideMarkersInput) {
+            hideMarkersInput.addEventListener("change", (event) => {
+                editor.hideMarkers = event.target.checked;
+                updateMarkerStyles();
+                scheduleOverrideSave();
+            });
+        }
+
+        if (hideSidebarInput) {
+            hideSidebarInput.addEventListener("change", (event) => {
+                editor.hideSidebar = event.target.checked;
+                scheduleOverrideSave();
+            });
+        }
 
         rotationInput.addEventListener("input", (event) => {
             applyHeading(event.target.value);

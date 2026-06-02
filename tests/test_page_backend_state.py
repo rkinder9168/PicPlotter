@@ -90,8 +90,9 @@ class PageBackendStateTests(unittest.TestCase):
 
             loaded = _load_overrides(path)
 
-        self.assertEqual(loaded[-2], "group")
-        self.assertEqual(loaded[-1].get_page(DEFAULT_PAGE_ID).name, "Page 1")
+        # tuple tail: ..., assignment_mode (-4), page_assignments (-3), hide_markers (-2), hide_sidebar (-1)
+        self.assertEqual(loaded[-4], "group")
+        self.assertEqual(loaded[-3].get_page(DEFAULT_PAGE_ID).name, "Page 1")
 
     def test_load_overrides_reads_page_assignments(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -114,9 +115,9 @@ class PageBackendStateTests(unittest.TestCase):
             )
 
             loaded = _load_overrides(path)
-            page_assignments = loaded[-1]
+            page_assignments = loaded[-3]
 
-        self.assertEqual(loaded[-2], "page")
+        self.assertEqual(loaded[-4], "page")
         self.assertEqual(page_assignments.get_page("page-custom").name, "Interior")
         self.assertEqual(page_assignments.get_page_for_photo("/photos/a.jpg").id, "page-custom")
 
