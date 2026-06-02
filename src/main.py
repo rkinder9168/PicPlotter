@@ -507,7 +507,10 @@ class AppApi:
 
         patterns = ";".join(f"*{ext}" for ext in get_supported_media_extensions())
         file_types = [
-            f"Photos & videos ({patterns})",
+            # pywebview validates each filter as `^[\w ]+\(...\)$` — the description
+            # must be word chars + spaces only (no '&', '/', etc.) or
+            # create_file_dialog raises and the dialog never opens.
+            f"Media files ({patterns})",
             "All files (*.*)",
         ]
 

@@ -2,6 +2,7 @@
 and the HTML generator's video lightbox output."""
 
 import io
+import re
 import sys
 import tempfile
 import types
@@ -18,6 +19,7 @@ from PIL import Image
 from src.exif_extractor import GPSCoordinates, ImageMetadata
 from src.coordinate_transform import PixelPoint
 from src.html_map_generator import HTMLMapGenerator
+from src.video_metadata import get_supported_media_extensions
 from src.main import (
     _collect_video_assets,
     _strip_video_markers,
@@ -110,6 +112,22 @@ class TestCollectVideoAssets(unittest.TestCase):
         finally:
             for f in files:
                 Path(f).unlink()
+
+
+class TestFileDialogFilter(unittest.TestCase):
+    # pywebview's util.parse_file_type validates each filter against this regex;
+    # if it fails, create_file_dialog raises and the dialog silently never opens.
+    PYWEBVIEW_FILTER_RE = r'^([\w ]+)\((\*(?:\.(?:\w+|\*))*(?:;\*\.\w+)*)\)$'
+
+    def test_media_filter_is_valid_for_pywebview(self):
+        patterns = ";".join(f"*{ext}" for ext in get_supported_media_extensions())
+        media_filter = f"Media files ({patterns})"
+        self.assertRegex(media_filter, self.PYWEBVIEW_FILTER_RE)
+        self.assertRegex("All files (*.*)", self.PYWEBVIEW_FILTER_RE)
+
+    def test_ampersand_description_would_be_rejected(self):
+        # Guard the exact regression: an '&' in the description fails validation.
+        self.assertNotRegex("Photos & videos (*.mp4)", self.PYWEBVIEW_FILTER_RE)
 
 
 class TestStripVideoMarkers(unittest.TestCase):
