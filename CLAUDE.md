@@ -5,7 +5,7 @@
 **Project**: PicPlotter Auto (Web/Drive edition)
 **Repo**: `PicPlotter_web_claude`
 **Purpose**: Auto-plot geotagged photos (and videos) on Google satellite imagery and export KMZ/HTML. Supports Google Drive folder import with URL-referenced web deployments. Videos are placed like photos and play in the web (Netlify) deliverable.
-**Status**: Feature complete, v4.0.0 — Page mode + per-project Netlify URL persistence
+**Status**: Feature complete, v4.1.0 — Photo + video media (videos play in web deploy); Page mode + per-project Netlify URL persistence
 **Related Docs**: [PLANNING.md](./PLANNING.md) | [TASKS.md](./TASKS.md) | [docs/page-mode-feature-plan.md](./docs/page-mode-feature-plan.md)
 
 ---
