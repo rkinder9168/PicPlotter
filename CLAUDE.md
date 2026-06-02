@@ -4,7 +4,7 @@
 
 **Project**: PicPlotter Auto (Web/Drive edition)
 **Repo**: `PicPlotter_web_claude`
-**Purpose**: Auto-plot geotagged photos on Google satellite imagery and export KMZ/HTML. Supports Google Drive folder import with URL-referenced web deployments.
+**Purpose**: Auto-plot geotagged photos (and videos) on Google satellite imagery and export KMZ/HTML. Supports Google Drive folder import with URL-referenced web deployments. Videos are placed like photos and play in the web (Netlify) deliverable.
 **Status**: Feature complete, v4.0.0 — Page mode + per-project Netlify URL persistence
 **Related Docs**: [PLANNING.md](./PLANNING.md) | [TASKS.md](./TASKS.md) | [docs/page-mode-feature-plan.md](./docs/page-mode-feature-plan.md)
 
@@ -46,6 +46,7 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 - **Automatic map placement** - no manual calibration clicks
 - **Manual corrections** - drag markers for fine-tuning
 - **Google Drive import** - load photos from shared folders; web deploys use URL references (no download/re-upload)
+- **Photos + videos** - videos (`.mp4/.mov/.m4v/.webm`) import from local disk and Drive, place on the map like photos (logo markers), and **play in the web (Netlify) deliverable** — Drive videos via Drive's embed player, local videos uploaded as Netlify assets. Single-file HTML and KMZ exclude video (with a warning). GPS is parsed from MP4/MOV containers (local reliable; Drive best-effort → manual placement)
 - **KMZ and HTML exports** - deliver to Google Earth Pro or clients
 - **Deploy to Web** - Netlify deployment; each saved project owns a permanent Netlify site_id + URL stored in its JSON, so redeploys update the same site instead of clobbering other projects' links
 - **Project memory** - save/load full per-project state: form fields, photo lists/drive sources, every editor override (`custom_map_path`, gps + custom marker placements, headings, autoplot, marker size, groups, page assignments + per-page editor state), and the Netlify site/URL. `_persist_active_project_overrides()` syncs the project JSON on every debounced editor save and on deploy.
@@ -63,7 +64,8 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 │   ├── __init__.py             # Package marker + version
 │   ├── main.py                 # Entry point + single-window pywebview UI
 │   ├── config.py               # API key config, constants, project management
-│   ├── exif_extractor.py       # GPS coordinate extraction from EXIF
+│   ├── exif_extractor.py       # GPS coordinate extraction from EXIF (photos)
+│   ├── video_metadata.py       # MP4/MOV GPS parsing + photo/video classification helpers
 │   ├── image_processor.py      # HEIC conversion, compression, EXIF orientation
 │   ├── kmz_generator.py        # KML/KMZ generation with embedded images
 │   ├── html_map_generator.py   # HTML map export with interactive markers
@@ -102,10 +104,11 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 ### `src/main.py`
 - Single-window pywebview UI for selection, options, and editor
 - Opens the map editor when requested from the main screen
-- `import_from_drive()` - imports photos from shared Google Drive folders
+- `import_from_drive()` - imports photos/videos from shared Google Drive folders
 - Handles KMZ and HTML export using saved marker overrides
 - Web deploy uses Drive image URLs (no download) when all photos are from Drive
 - Parallel photo processing with ThreadPoolExecutor
+- **Video support**: `_get_local_media_metadata()` dispatches photo (EXIF) vs video (MP4/MOV) metadata; `select_photos`/`load_project` accept media via `is_supported_media`/`get_supported_media_extensions`; `_get_photo_preview_uri()` uses the Drive thumbnail for Drive videos and `_VIDEO_PLACEHOLDER_URI` (inline ▶ SVG) for local videos; `_build_photo_list` sets `is_video`. `_video_export_dict()` builds video export dicts (Drive→`embed`+`video_url` preview iframe URL+`poster`; local→`local_video_path`+deferred `video_url`). `_collect_video_assets()` resolves local-video `media/<name>` URLs and returns bytes for `_deploy_html_to_netlify(..., extra_files=...)`. `_strip_video_markers()` drops videos from local HTML (`export_html`, returns a `warning`) and KMZ (`start_kmz_export`, reports `video_skipped`)
 - `AppState.assignment_mode` (`"group"` | `"page"`) and `page_assignments`; pywebview API for Page mode: `set_assignment_mode`, `get_assignment_state`, `add_page`, `delete_page`, `rename_page`, `assign_photo_page`, `select_page_custom_map_image`
 - `_serialize_page_state()` and `_sync_page_assignments()` keep frontend state in sync; per-page editor state persists in `map_overrides.json` and saved projects with backward-compatible defaults
 - `_serialize_overrides_state(state)` returns the single canonical overrides payload (markers, custom_markers, custom_map_path, headings, autoplot, marker_size, groups, group_assignments, group_aliases, pages, page_assignments, photo_aliases, photo_notes). Used both by `_apply_overrides` to write `map_overrides.json` and by `save_project` to embed the full editor state in the project JSON.
@@ -117,7 +120,9 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 - Google Drive API v3 client using stdlib `urllib` (no extra dependencies)
 - `parse_drive_folder_url()` - extracts folder ID from sharing URLs
 - `list_folder_images()` - lists images with pagination
-- `get_image_url()` / `get_thumbnail_url()` - public CDN URLs for shared files
+- `get_image_url()` / `get_thumbnail_url()` - public CDN URLs for shared files (the thumbnail doubles as a video poster — Drive auto-generates video thumbnails)
+- `get_video_embed_url()` - Drive `/file/d/<id>/preview` embeddable player URL for shared videos
+- `list_folder_images()` query (`_MEDIA_MIME_QUERY`) includes video MIME types (`video/mp4`, `video/quicktime`, `video/x-m4v`, `video/webm`)
 - `fetch_image_bytes()` - full/partial file download for local exports
 - `extract_metadata_from_drive()` - EXIF extraction from partial download
 
@@ -131,6 +136,7 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 
 ### `src/netlify_deployer.py`
 - `NetlifyDeployer(token, site_id)` — `_ensure_site()` GETs the supplied site_id and reuses it if it still exists; on 404/410 (or when no site_id was supplied) creates a new site with a `picplotter-maps-<8hex>` unique name. Never deletes sites — that would break live client links.
+- `deploy(html, name, extra_files=None)` / `_deploy_file()` deploy via the file-digest API; `extra_files` (a `path -> bytes` map) ships local video assets (`/media/<name>`) alongside `index.html`.
 - `DeployResult` carries `site_id` back to the caller so the project JSON can be updated.
 - `verify_token()` confirms a personal access token works.
 
@@ -139,9 +145,16 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 - `get_image_metadata_from_bytes()` for in-memory EXIF extraction (Drive photos)
 - Handles JPG and HEIC formats
 
+### `src/video_metadata.py`
+- Pure-stdlib MP4/MOV (ISO-BMFF) parsing — no extra dependency. Reuses `GPSCoordinates`/`ImageMetadata` from `exif_extractor`.
+- Classification helpers: `is_video_format`, `get_video_extensions`, `video_mime_for`, plus combined `is_supported_media` / `get_supported_media_extensions` (one-way import from `exif_extractor`)
+- `extract_video_gps(bytes)` walks boxes to the `moov` payload and reads GPS from the `©xyz` ISO-6709 atom (Android/iPhone), falling back to scanning for the QuickTime `com.apple.quicktime.location.ISO6709` string. `parse_iso6709()` handles decimal-degree strings.
+- `extract_video_metadata(path)` reads only box headers + the `moov` payload (handles `moov`-at-end without loading the whole file) → GPS + best-effort `mvhd` timestamp; `extract_video_metadata_from_bytes()` for Drive partials (best-effort)
+
 ### `src/html_map_generator.py`
 - Generates interactive HTML maps with aerial background and photo markers
 - Supports both base64-embedded photos (`image_data`) and URL-referenced photos (`image_url`)
+- **Video lightbox**: photo dicts flagged `is_video` carry `video_url` (+`embed`/`poster`). Both the single-page and multi-page lightboxes include a hidden `<video>` and `<iframe>`; `applyLightboxMedia()` shows the iframe for Drive embeds, the `<video>` for local `media/...` assets, or the `<img>` for photos, and `resetLightboxMedia()` stops playback on close/navigate. The per-photo payload carries `isVideo`/`embed`/`poster`
 - Renders the user's logo in the sidebar header and an optional "Prepared by" block (`company_name`, `company_address`, `company_phone`, `company_website`) alongside the existing client info
 - Marker numbers render as a small white badge in the lower-right corner of each marker so they remain readable against any logo
 - `generate_multi_page_html()` builds a single self-contained multi-page deliverable for Page mode: ordered `pages[]` payload (id, name, background, dimensions, photos, marker pixels, legend); deliverable JS swaps background, markers, lightbox scope, and legend on page change. The deliverable is mobile-responsive — slide-out sidebar with scrim under 900px, pinch-to-zoom + one-finger pan via touch handlers, `env(safe-area-inset-*)` padding, and a `visualViewport` listener that keeps the lightbox usable as iOS Safari's URL bar collapses
@@ -170,7 +183,7 @@ pywebview>=4.0       # Embedded map editor
 pyinstaller>=6.0     # Executable creation (build only)
 ```
 
-No additional dependencies for Google Drive support (uses stdlib `urllib`).
+No additional dependencies for Google Drive support (uses stdlib `urllib`) or for video support (MP4/MOV GPS parsing is pure stdlib in `video_metadata.py`; no ffmpeg — local-video posters use an inline ▶ placeholder, Drive videos use Drive's auto thumbnail).
 
 ---
 

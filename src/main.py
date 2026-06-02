@@ -60,8 +60,6 @@ from src.netlify_deployer import NetlifyDeployer, verify_token as verify_netlify
 from src.exif_extractor import (
     get_image_metadata,
     get_image_metadata_from_bytes,
-    get_supported_extensions,
-    is_supported_format,
     HEIC_SUPPORTED,
     GPSCoordinates,
     ImageMetadata,
@@ -72,9 +70,17 @@ from src.google_drive import (
     list_folder_images,
     get_image_url,
     get_thumbnail_url,
+    get_video_embed_url,
     fetch_image_bytes,
     get_drive_image_metadata,
     extract_metadata_from_drive,
+)
+from src.video_metadata import (
+    is_video_format,
+    is_supported_media,
+    get_supported_media_extensions,
+    video_mime_for,
+    extract_video_metadata,
 )
 from src.html_map_generator import (
     HTMLMapGenerator,
@@ -103,6 +109,23 @@ DEFAULT_GROUP_IDS = {group["id"] for group in DEFAULT_GROUPS}
 UI_MARKER_ICON_SIZE = 256
 PHOTO_PREVIEW_MAX_DIM = 450
 PHOTO_PREVIEW_QUALITY = 70
+
+# Inline SVG ▶ placeholder shown in the editor for local videos (Drive videos use
+# Drive's real auto-generated thumbnail). Inline so nothing extra needs bundling.
+_VIDEO_PLACEHOLDER_SVG = (
+    "<svg xmlns='http://www.w3.org/2000/svg' width='160' height='120' viewBox='0 0 160 120'>"
+    "<rect width='160' height='120' rx='10' fill='#1f2937'/>"
+    "<circle cx='80' cy='60' r='28' fill='rgba(255,255,255,0.18)'/>"
+    "<path d='M70 44 L70 76 L98 60 Z' fill='#ffffff'/></svg>"
+)
+_VIDEO_PLACEHOLDER_URI = "data:image/svg+xml," + quote(_VIDEO_PLACEHOLDER_SVG)
+
+
+def _get_local_media_metadata(filepath: str) -> ImageMetadata:
+    """Extract metadata from a local file, dispatching video vs photo."""
+    if is_video_format(filepath):
+        return extract_video_metadata(filepath)
+    return get_image_metadata(filepath)
 
 
 @dataclass
@@ -269,10 +292,10 @@ class AppApi:
                 if not Path(filepath).exists():
                     errors.append(f"{Path(filepath).name}: file not found")
                     continue
-                if not is_supported_format(filepath):
+                if not is_supported_media(filepath):
                     continue
                 try:
-                    metadata = get_image_metadata(filepath)
+                    metadata = _get_local_media_metadata(filepath)
                 except Exception as exc:
                     errors.append(f"{Path(filepath).name}: {exc}")
                     continue
@@ -482,9 +505,9 @@ class AppApi:
         if not self._window:
             return {"status": "error", "message": "Window not ready"}
 
-        patterns = ";".join(f"*{ext}" for ext in get_supported_extensions())
+        patterns = ";".join(f"*{ext}" for ext in get_supported_media_extensions())
         file_types = [
-            f"Image files ({patterns})",
+            f"Photos & videos ({patterns})",
             "All files (*.*)",
         ]
 
@@ -504,10 +527,10 @@ class AppApi:
         for filepath in result:
             if filepath in self._state.selected_files:
                 continue
-            if not is_supported_format(filepath):
+            if not is_supported_media(filepath):
                 continue
             try:
-                metadata = get_image_metadata(filepath)
+                metadata = _get_local_media_metadata(filepath)
             except Exception as exc:
                 errors.append(f"{Path(filepath).name}: {exc}")
                 continue
@@ -518,7 +541,7 @@ class AppApi:
         self._sync_page_assignments()
 
         if not self._state.selected_files and errors:
-            message = "No supported photos loaded."
+            message = "No supported photos or videos loaded."
             message = f"{message} {errors[0]}" if errors else message
             return {"status": "error", "message": message}
 
@@ -1325,6 +1348,22 @@ class AppApi:
         try:
             self._sync_group_assignments()
             self._sync_page_assignments()
+
+            # The single-file HTML deliverable can't play video — drop video markers
+            # and tell the user (videos are supported via Deploy to Web).
+            video_paths = {fp for fp in self._state.selected_files if is_video_format(fp)}
+            dropped_videos = _strip_video_markers(payload, video_paths) if video_paths else 0
+            warning = (
+                f"{dropped_videos} video(s) skipped — videos play in Deploy to Web."
+                if dropped_videos else None
+            )
+
+            def _ok(path: str) -> Dict[str, Any]:
+                out = {"status": "ok", "path": path}
+                if warning:
+                    out["warning"] = warning
+                return out
+
             if payload.get("assignment_mode") == "page":
                 export_pages = _build_multi_page_export_pages(self._state, payload, use_drive_urls=False)
                 generator = HTMLMapGenerator(
@@ -1344,7 +1383,7 @@ class AppApi:
                 _apply_overrides(self._state, payload)
                 if not open_file_in_default_app(result_path):
                     open_folder_containing(result_path)
-                return {"status": "ok", "path": result_path}
+                return _ok(result_path)
 
             map_source = payload.get("map_source", "tiles")
             if map_source == "custom":
@@ -1405,7 +1444,7 @@ class AppApi:
                 _apply_overrides(self._state, payload)
                 if not open_file_in_default_app(result_path):
                     open_folder_containing(result_path)
-                return {"status": "ok", "path": result_path}
+                return _ok(result_path)
 
             map_state = payload.get("map_state", {})
             center = map_state.get("center", {})
@@ -1505,15 +1544,21 @@ class AppApi:
             _apply_overrides(self._state, payload)
             if not open_file_in_default_app(result_path):
                 open_folder_containing(result_path)
-            return {"status": "ok", "path": result_path}
+            return _ok(result_path)
         except Exception as exc:
             return {"status": "error", "message": str(exc)}
 
-    def _deploy_html_to_netlify(self, token: str, html_content: str, project_name: str) -> Dict[str, Any]:
+    def _deploy_html_to_netlify(
+        self,
+        token: str,
+        html_content: str,
+        project_name: str,
+        extra_files: Optional[Dict[str, bytes]] = None,
+    ) -> Dict[str, Any]:
         """Run the Netlify deploy, persist the site_id/URL for the active project, and
-        produce the API response dict."""
+        produce the API response dict. extra_files carries local video assets."""
         deployer = NetlifyDeployer(token, self._state.netlify_site_id)
-        result = deployer.deploy(html_content, project_name)
+        result = deployer.deploy(html_content, project_name, extra_files)
         if not result.success:
             return {"status": "error", "message": result.error}
 
@@ -1552,6 +1597,10 @@ class AppApi:
             self._sync_page_assignments()
             if payload.get("assignment_mode") == "page":
                 export_pages = _build_multi_page_export_pages(self._state, payload, use_drive_urls=True)
+                # Collect local-video bytes across all pages and resolve their media/ URLs
+                # before generating the HTML that references them.
+                all_page_photos = [p for page in export_pages for p in page.get("photos", [])]
+                extra_files = _collect_video_assets(all_page_photos)
                 generator = HTMLMapGenerator(
                     project_name=payload.get("project_name", "Photo Map"),
                     marker_size=int(payload.get("marker_size", self._state.marker_size)),
@@ -1567,7 +1616,7 @@ class AppApi:
                     return_content=True,
                 )
                 project_name = payload.get("project_name", "Photo Map")
-                response = self._deploy_html_to_netlify(token, html_content, project_name)
+                response = self._deploy_html_to_netlify(token, html_content, project_name, extra_files)
                 if response["status"] == "ok":
                     _apply_overrides(self._state, payload)
                 return response
@@ -1631,6 +1680,7 @@ class AppApi:
                     **get_company_info(),
                 )
 
+                extra_files = _collect_video_assets(processed_photos)
                 html_content = generator.generate_single_html(
                     processed_photos,
                     export_image_path,
@@ -1740,6 +1790,7 @@ class AppApi:
                     **get_company_info(),
                 )
 
+                extra_files = _collect_video_assets(processed_photos)
                 html_content = generator.generate_single_html(
                     processed_photos,
                     aerial_image_path=None,
@@ -1754,7 +1805,7 @@ class AppApi:
                 )
 
             project_name = payload.get("project_name", "Photo Map")
-            response = self._deploy_html_to_netlify(token, html_content, project_name)
+            response = self._deploy_html_to_netlify(token, html_content, project_name, extra_files)
             if response["status"] == "ok":
                 _apply_overrides(self._state, payload)
             return response
@@ -1764,13 +1815,23 @@ class AppApi:
 
     def start_kmz_export(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         gps_files = []
+        video_skipped = 0
         for path in self._state.selected_files:
             metadata = self._state.file_metadata.get(path)
             if not metadata:
                 continue
             if metadata.gps or path in self._state.gps_overrides:
+                # KMZ (Google Earth) doesn't support video playback — omit videos.
+                if is_video_format(path):
+                    video_skipped += 1
+                    continue
                 gps_files.append(path)
         if not gps_files:
+            if video_skipped:
+                return {
+                    "status": "error",
+                    "message": "KMZ supports photos only. Use Deploy to Web for video.",
+                }
             return {"status": "error", "message": "No placed photos available."}
 
         output_path = self._prompt_kmz_save_path(payload)
@@ -1783,7 +1844,7 @@ class AppApi:
 
             thread = threading.Thread(
                 target=self._run_kmz_export,
-                args=(gps_files, output_path, payload),
+                args=(gps_files, output_path, payload, video_skipped),
                 daemon=True,
             )
             self._kmz_thread = thread
@@ -1800,7 +1861,13 @@ class AppApi:
     def on_closing(self) -> None:
         return
 
-    def _run_kmz_export(self, files: List[str], output_path: str, payload: Dict[str, Any]) -> None:
+    def _run_kmz_export(
+        self,
+        files: List[str],
+        output_path: str,
+        payload: Dict[str, Any],
+        video_skipped: int = 0,
+    ) -> None:
         import tempfile
 
         def progress_callback(status: str, current: int, total: int) -> None:
@@ -1859,6 +1926,7 @@ class AppApi:
                     "processed": processed,
                     "skipped": skipped,
                     "errors": errors,
+                    "video_skipped": video_skipped,
                 }
                 self._window.evaluate_js(f"window.kmzComplete({json.dumps(result)})")
         except Exception as exc:
@@ -1969,7 +2037,11 @@ class AppApi:
             return cached
         file_id = self._state.drive_sources.get(filepath)
         if file_id:
+            # Drive auto-generates a poster thumbnail for videos too.
             preview_uri = get_thumbnail_url(file_id, PHOTO_PREVIEW_MAX_DIM)
+        elif is_video_format(filepath):
+            # No dependency-free way to grab a local video frame — use a placeholder.
+            preview_uri = _VIDEO_PLACEHOLDER_URI
         else:
             preview_uri = _image_to_preview_data_uri(
                 filepath,
@@ -2010,6 +2082,7 @@ class AppApi:
                 "note": note,
                 "preview_uri": self._get_photo_preview_uri(filepath),
                 "has_gps": bool(metadata.gps),
+                "is_video": is_video_format(filepath),
                 "has_override": (
                     has_page_override
                     if self._state.assignment_mode == "page"
@@ -2896,6 +2969,108 @@ def _build_marker_pixels(
     return pixels
 
 
+def _video_export_dict(
+    filepath: str,
+    drive_file_id: Optional[str],
+    metadata: ImageMetadata,
+    gps: GPSCoordinates,
+    custom_name: str,
+    note: str,
+) -> Dict[str, Any]:
+    """Build an export dict for a video item (no image bytes).
+
+    Drive videos play via Drive's embed iframe; local videos reference a relative
+    ``media/...`` URL whose bytes are uploaded at deploy time (see
+    _collect_video_assets). Videos only play in the web deploy.
+    """
+    display_name = custom_name if custom_name else metadata.filename
+    entry: Dict[str, Any] = {
+        "filepath": filepath,
+        "filename": metadata.filename,
+        "display_name": display_name,
+        "custom_name": custom_name,
+        "note": note,
+        "is_video": True,
+        "gps": gps,
+        "timestamp": metadata.timestamp,
+    }
+    if drive_file_id:
+        entry["embed"] = True
+        entry["video_url"] = get_video_embed_url(drive_file_id)
+        entry["poster"] = get_image_url(drive_file_id, 1920)
+    else:
+        entry["embed"] = False
+        entry["local_video_path"] = filepath
+        entry["video_mime"] = video_mime_for(filepath)
+        entry["video_url"] = ""  # resolved by _collect_video_assets() at deploy time
+    return entry
+
+
+def _collect_video_assets(processed_photos: List[Dict[str, Any]]) -> Dict[str, bytes]:
+    """Assign relative media URLs to local-video dicts and collect their bytes.
+
+    Mutates each local-video dict's ``video_url`` to ``media/<name>`` (in place,
+    so nested page photo lists update by reference) and returns a mapping of
+    site-absolute path -> bytes for NetlifyDeployer's extra_files. Drive videos
+    (embed=True) stream from Drive and are skipped.
+    """
+    assets: Dict[str, bytes] = {}
+    used: set = set()
+    counter = 0
+    for photo in processed_photos:
+        if not photo.get("is_video"):
+            continue
+        local_path = photo.get("local_video_path")
+        if not local_path:
+            continue  # Drive video (embed) — nothing to upload
+        try:
+            data = Path(local_path).read_bytes()
+        except OSError:
+            continue
+        stem = Path(local_path).stem
+        ext = Path(local_path).suffix.lower() or ".mp4"
+        safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in stem)[:48] or "video"
+        name = f"{counter}_{safe}{ext}"
+        while name in used:
+            counter += 1
+            name = f"{counter}_{safe}{ext}"
+        used.add(name)
+        counter += 1
+        photo["video_url"] = f"media/{name}"
+        assets[f"/media/{name}"] = data
+    return assets
+
+
+def _strip_video_markers(payload: Dict[str, Any], video_paths: set) -> int:
+    """Remove video entries from the payload's marker lists in place.
+
+    Used by KMZ + local single-file HTML, which don't support video playback.
+    Returns the number of video markers removed.
+    """
+    removed = 0
+
+    def strip_list(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        nonlocal removed
+        kept = []
+        for item in items:
+            fp = item.get("filepath") if isinstance(item, dict) else None
+            if fp in video_paths:
+                removed += 1
+            else:
+                kept.append(item)
+        return kept
+
+    for key in ("markers", "custom_markers"):
+        if isinstance(payload.get(key), list):
+            payload[key] = strip_list(payload[key])
+    for page in payload.get("pages") or []:
+        if isinstance(page, dict):
+            for key in ("markers", "custom_markers"):
+                if isinstance(page.get(key), list):
+                    page[key] = strip_list(page[key])
+    return removed
+
+
 def _process_single_photo(
     filepath: str,
     processor: ImageProcessor,
@@ -2914,6 +3089,8 @@ def _process_single_photo(
 
     If drive_file_id is provided, downloads from Drive instead of local disk.
     """
+    if is_video_format(filepath):
+        return _video_export_dict(filepath, drive_file_id, metadata, gps, custom_name, note)
     if drive_file_id and api_key:
         raw_bytes = fetch_image_bytes(drive_file_id, api_key)
         image_data, filename = processor.process_image_bytes(raw_bytes, metadata.filename)
@@ -3185,6 +3362,12 @@ def _build_drive_photo_dicts(
         note = state.photo_notes.get(filepath, "")
         file_id = state.drive_sources[filepath]
 
+        if is_video_format(filepath):
+            processed_photos.append(
+                _video_export_dict(filepath, file_id, metadata, gps, custom_name, note)
+            )
+            continue
+
         processed_photos.append({
             "filepath": filepath,
             "filename": metadata.filename,
@@ -3222,6 +3405,12 @@ def _build_drive_photo_dicts_for_markers(
         display_name = custom_name if custom_name else metadata.filename
         note = state.photo_notes.get(filepath, "")
         file_id = state.drive_sources[filepath]
+
+        if is_video_format(filepath):
+            processed_photos.append(
+                _video_export_dict(filepath, file_id, metadata, gps, custom_name, note)
+            )
+            continue
 
         processed_photos.append({
             "filepath": filepath,
@@ -3263,16 +3452,21 @@ def _build_drive_custom_export(
         note = state.photo_notes.get(filepath, "")
         file_id = state.drive_sources[filepath]
 
-        processed_photos.append({
-            "filepath": filepath,
-            "filename": metadata.filename,
-            "display_name": display_name,
-            "custom_name": custom_name,
-            "note": note,
-            "image_url": get_image_url(file_id, 1920),
-            "gps": gps,
-            "timestamp": metadata.timestamp,
-        })
+        if is_video_format(filepath):
+            processed_photos.append(
+                _video_export_dict(filepath, file_id, metadata, gps, custom_name, note)
+            )
+        else:
+            processed_photos.append({
+                "filepath": filepath,
+                "filename": metadata.filename,
+                "display_name": display_name,
+                "custom_name": custom_name,
+                "note": note,
+                "image_url": get_image_url(file_id, 1920),
+                "gps": gps,
+                "timestamp": metadata.timestamp,
+            })
         marker_pixels.append(PixelPoint(float(x), float(y)))
 
     return processed_photos, marker_pixels

@@ -71,13 +71,19 @@ def parse_drive_folder_url(url: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 _DRIVE_API = "https://www.googleapis.com/drive/v3"
-_IMAGE_MIME_QUERY = (
+# Photos and videos. Videos play in the web (Netlify) deliverable via Drive's
+# embed player; see get_video_embed_url().
+_MEDIA_MIME_QUERY = (
     "(mimeType contains 'image/jpeg' or "
     "mimeType contains 'image/png' or "
     "mimeType contains 'image/heic' or "
     "mimeType contains 'image/heif' or "
     "mimeType contains 'image/tiff' or "
-    "mimeType contains 'image/webp')"
+    "mimeType contains 'image/webp' or "
+    "mimeType contains 'video/mp4' or "
+    "mimeType contains 'video/quicktime' or "
+    "mimeType contains 'video/x-m4v' or "
+    "mimeType contains 'video/webm')"
 )
 
 
@@ -159,7 +165,7 @@ def list_folder_images(
 
     while True:
         params: dict = {
-            "q": f"'{folder_id}' in parents and {_IMAGE_MIME_QUERY} and trashed = false",
+            "q": f"'{folder_id}' in parents and {_MEDIA_MIME_QUERY} and trashed = false",
             "pageSize": str(page_size),
             "fields": "nextPageToken,files(id,name,mimeType,size)",
             "orderBy": "name",
@@ -198,8 +204,21 @@ def get_image_url(file_id: str, size: int = 1920) -> str:
 
 
 def get_thumbnail_url(file_id: str, size: int = 450) -> str:
-    """Return a smaller thumbnail URL suitable for previews."""
+    """Return a smaller thumbnail URL suitable for previews.
+
+    Drive auto-generates a poster thumbnail for video files too, so this doubles
+    as a video poster source.
+    """
     return get_image_url(file_id, size)
+
+
+def get_video_embed_url(file_id: str) -> str:
+    """Return Google Drive's embeddable player URL for a shared video file.
+
+    Loaded in an <iframe> in the web deliverable so videos play without being
+    downloaded. Works for files shared as 'Anyone with the link'.
+    """
+    return f"https://drive.google.com/file/d/{quote(file_id)}/preview"
 
 
 # ---------------------------------------------------------------------------

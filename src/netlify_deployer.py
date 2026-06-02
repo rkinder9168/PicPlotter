@@ -11,7 +11,7 @@ import json
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Optional
+from typing import Dict, Optional
 from uuid import uuid4
 
 from src.config import get_ssl_context
@@ -38,20 +38,28 @@ class NetlifyDeployer:
         self.token = token
         self.site_id = site_id
 
-    def deploy(self, html_content: str, project_name: str) -> DeployResult:
+    def deploy(
+        self,
+        html_content: str,
+        project_name: str,
+        extra_files: Optional[Dict[str, bytes]] = None,
+    ) -> DeployResult:
         """
         Deploy HTML content to Netlify.
 
         Args:
             html_content: The complete HTML file content
             project_name: Base name for the project (unused, kept for API compat)
+            extra_files: Optional extra assets to deploy alongside index.html,
+                keyed by site-absolute path (e.g. "/media/clip.mp4") -> bytes.
+                Used to ship local video files referenced by the HTML.
 
         Returns:
             DeployResult with URL on success or error message on failure
         """
         try:
             site_id = self._ensure_site()
-            result = self._deploy_file(site_id, html_content)
+            result = self._deploy_file(site_id, html_content, extra_files)
             if result.success:
                 result.site_id = site_id
             return result
@@ -123,8 +131,13 @@ class NetlifyDeployer:
         result = self._api_request("POST", "/sites", {"name": unique_name})
         return result["id"]
 
-    def _deploy_file(self, site_id: str, html_content: str) -> DeployResult:
-        """Deploy HTML content using the file digest API."""
+    def _deploy_file(
+        self,
+        site_id: str,
+        html_content: str,
+        extra_files: Optional[Dict[str, bytes]] = None,
+    ) -> DeployResult:
+        """Deploy HTML content (plus any extra asset files) using the digest API."""
         file_bytes = html_content.encode("utf-8")
         file_sha1 = hashlib.sha1(file_bytes).hexdigest()
 
@@ -133,22 +146,24 @@ class NetlifyDeployer:
         headers_bytes = headers_content.encode("utf-8")
         headers_sha1 = hashlib.sha1(headers_bytes).hexdigest()
 
-        # Step 1: Create deploy with file digests
-        deploy_body = {
-            "files": {
-                "/index.html": file_sha1,
-                "/_headers": headers_sha1,
-            },
+        # Map every file (index, headers, extra assets) to its sha1 digest.
+        contents: Dict[str, bytes] = {
+            "/index.html": file_bytes,
+            "/_headers": headers_bytes,
         }
-        result = self._api_request("POST", f"/sites/{site_id}/deploys", deploy_body)
-        deploy_id = result["id"]
-        required = result.get("required", [])
+        for path, data in (extra_files or {}).items():
+            contents[path] = data
+        digests = {path: hashlib.sha1(data).hexdigest() for path, data in contents.items()}
 
-        # Step 2: Upload files that Netlify needs
-        if file_sha1 in required:
-            self._upload_file(deploy_id, "/index.html", file_bytes)
-        if headers_sha1 in required:
-            self._upload_file(deploy_id, "/_headers", headers_bytes)
+        # Step 1: Create deploy with file digests
+        result = self._api_request("POST", f"/sites/{site_id}/deploys", {"files": digests})
+        deploy_id = result["id"]
+        required = set(result.get("required", []))
+
+        # Step 2: Upload only the files Netlify says it still needs
+        for path, data in contents.items():
+            if digests[path] in required:
+                self._upload_file(deploy_id, path, data)
 
         deploy_url = result.get("ssl_url") or result.get("deploy_ssl_url", "")
         return DeployResult(

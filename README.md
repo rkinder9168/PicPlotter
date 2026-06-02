@@ -8,7 +8,7 @@ Auto-plot Google satellite imagery from your geotagged photos, then export KMZ o
 
 1. Double-click `PicPlotterAuto.exe`
 2. (Optional) Enter your Google Maps API key on the main screen and click "Save"
-3. Click "Import Photos" to select local images, or "Import from Drive" to load from a shared Google Drive folder
+3. Click "Import Photos" to select local images or videos, or "Import from Drive" to load photos/videos from a shared Google Drive folder
 4. Click "Open Map Editor" to load the tile preview and markers
 5. Adjust marker size, drag markers, and rotate the view if needed
 6. Export the HTML deliverable from the map editor
@@ -20,13 +20,14 @@ Auto-plot Google satellite imagery from your geotagged photos, then export KMZ o
 - **Manual marker corrections** - drag markers to fine-tune placement
 - **Manual placement for any photo** - click the map to place non-GPS photos
 - **Google Drive import** - load photos from a shared Drive folder; web deploys reference images by URL (no download/re-upload)
+- **Photos and videos** - add `.mp4/.mov/.m4v/.webm` clips (local or Drive) and place them on the map like photos; they **play in the web deliverable** (Deploy to Web). Drive videos play through Drive's built-in player; local videos are uploaded with the site. Single-file HTML and KMZ are photo-only (videos are skipped with a notice)
 - **KMZ and HTML outputs** - Google Earth Pro and client-ready HTML
 - **Deploy to Web** - instantly deploy interactive maps to Netlify; each project gets its own permanent URL that re-deploys overwrite (clients keep the same link)
 - **Project memory** - save and reload project settings (name, client, address, photo placements, custom background, deployed URL, etc.) so you don't have to retype or re-pick anything
 - **Custom branding** - upload your own logo (JPG/PNG) and enter company contact info; logo appears as photo markers and in the HTML deliverable's "Prepared by" block
 - **Page mode** - organize photos into named deliverable pages; each page owns its own background, view, rotation, and placements, and exports a multi-page interactive HTML with page navigation and per-page legend
 - **Modern dark UI** - single-window experience
-- **Supports HEIC and JPG** - works with iPhone and Android photos
+- **Supports HEIC and JPG** - works with iPhone and Android photos; videos in `.mp4/.mov/.m4v/.webm`
 
 ## Requirements
 
@@ -97,6 +98,8 @@ This lets you sign into Google and browse your Drive folders directly from PicPl
 3. Paste the folder sharing URL and click **Import**
 
 **Web deploys** reference photos by URL - no downloading or re-uploading needed, making deployment fast and lightweight. **Local HTML and KMZ exports** automatically download the photos to produce self-contained files.
+
+**Videos:** Drive videos play in the web deliverable via Drive's embed player (the folder must be shared "Anyone with the link"); local videos are uploaded alongside the deployed page. Local single-file HTML and KMZ exclude videos and show a brief notice. GPS is read from the video file when present (reliable for local files; Drive videos often need manual placement since the location data sits at the end of the file).
 
 ## Projects
 

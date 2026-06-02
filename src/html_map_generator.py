@@ -323,8 +323,10 @@ class HTMLMapGenerator:
 
         default_group = group_assignments.get_group("default") if group_assignments else None
         for i, photo in enumerate(photos):
-            # Encode photo - support URL references or base64
-            if 'image_url' in photo:
+            # Encode photo - support video URLs, URL references, or base64
+            if photo.get('is_video'):
+                photo_src = str(photo.get('video_url') or "")
+            elif 'image_url' in photo:
                 photo_src = photo['image_url']
             else:
                 photo_b64 = base64.b64encode(photo['image_data']).decode('utf-8')
@@ -347,6 +349,9 @@ class HTMLMapGenerator:
                 'src': photo_src,
                 'filename': display_name,
                 'note': note,
+                'isVideo': bool(photo.get('is_video')),
+                'embed': bool(photo.get('embed')),
+                'poster': str(photo.get('poster') or ''),
             })
 
             # Calculate marker position
@@ -420,6 +425,9 @@ class HTMLMapGenerator:
                     "src": photo_src,
                     "filename": str(display_name),
                     "note": str(note),
+                    "isVideo": bool(photo.get("is_video")),
+                    "embed": bool(photo.get("embed")),
+                    "poster": str(photo.get("poster") or ""),
                 })
                 markers_data.append({
                     "x": float(pixel.x),
@@ -481,6 +489,8 @@ class HTMLMapGenerator:
         return f"data:{mime_type};base64,{aerial_b64}", int(image_width), int(image_height)
 
     def _photo_src(self, photo: Dict[str, Any]) -> str:
+        if photo.get("is_video"):
+            return str(photo.get("video_url") or "")
         if "image_url" in photo:
             return str(photo["image_url"])
         photo_b64 = base64.b64encode(photo["image_data"]).decode("utf-8")
@@ -796,10 +806,20 @@ class HTMLMapGenerator:
         #lightbox.active {{
             display: flex;
         }}
-        #lightbox-img {{
+        #lightbox-img, #lightbox-video {{
             max-width: 94%;
             max-height: 82%;
             object-fit: contain;
+        }}
+        #lightbox-frame {{
+            width: min(94%, 1280px);
+            max-height: 82%;
+            aspect-ratio: 16 / 9;
+            border: none;
+            background: #000000;
+        }}
+        #lightbox-video[hidden], #lightbox-frame[hidden], #lightbox-img[hidden] {{
+            display: none !important;
         }}
         #lightbox-title, #lightbox-index, #lightbox-note {{
             color: #ffffff;
@@ -1092,6 +1112,8 @@ class HTMLMapGenerator:
             <div id="lightbox" role="dialog" aria-modal="true" aria-hidden="true">
                 <button id="lightbox-close" type="button" aria-label="Close photo">&times;</button>
                 <img id="lightbox-img" src="" alt="">
+                <video id="lightbox-video" controls playsinline preload="metadata" hidden></video>
+                <iframe id="lightbox-frame" allow="autoplay; fullscreen" allowfullscreen hidden></iframe>
                 <div id="lightbox-title"></div>
                 <div id="lightbox-index"></div>
                 <div id="lightbox-note"></div>
@@ -1133,6 +1155,8 @@ class HTMLMapGenerator:
         const markerLayer = document.getElementById('marker-layer');
         const lightbox = document.getElementById('lightbox');
         const lightboxImg = document.getElementById('lightbox-img');
+        const lightboxVideo = document.getElementById('lightbox-video');
+        const lightboxFrame = document.getElementById('lightbox-frame');
         const lightboxTitle = document.getElementById('lightbox-title');
         const lightboxIndex = document.getElementById('lightbox-index');
         const lightboxNote = document.getElementById('lightbox-note');
@@ -1245,12 +1269,42 @@ class HTMLMapGenerator:
             renderPage();
         }}
 
+        function resetLightboxMedia() {{
+            lightboxVideo.pause();
+            lightboxVideo.removeAttribute('src');
+            lightboxVideo.load();
+            lightboxVideo.hidden = true;
+            lightboxFrame.src = 'about:blank';
+            lightboxFrame.hidden = true;
+            lightboxImg.src = '';
+            lightboxImg.hidden = false;
+        }}
+
+        function applyLightboxMedia(photo) {{
+            resetLightboxMedia();
+            if (photo.isVideo) {{
+                lightboxImg.hidden = true;
+                if (photo.embed) {{
+                    lightboxFrame.src = photo.src;
+                    lightboxFrame.hidden = false;
+                }} else {{
+                    if (photo.poster) {{ lightboxVideo.poster = photo.poster; }}
+                    else {{ lightboxVideo.removeAttribute('poster'); }}
+                    lightboxVideo.src = photo.src;
+                    lightboxVideo.hidden = false;
+                }}
+            }} else {{
+                lightboxImg.src = photo.src;
+                lightboxImg.hidden = false;
+            }}
+        }}
+
         function showPhoto(index) {{
             const page = activePage();
             if (index < 0 || index >= page.photos.length) return;
             const photo = page.photos[index];
             currentPhotoIndex = index;
-            lightboxImg.src = photo.src;
+            applyLightboxMedia(photo);
             lightboxTitle.textContent = photo.filename || '';
             lightboxIndex.textContent = `Photo ${{index + 1}} of ${{page.photos.length}}`;
             const note = photo.note ? String(photo.note).trim() : '';
@@ -1265,7 +1319,7 @@ class HTMLMapGenerator:
         function closeLightbox() {{
             lightbox.classList.remove('active');
             lightbox.setAttribute('aria-hidden', 'true');
-            lightboxImg.src = '';
+            resetLightboxMedia();
             currentPhotoIndex = -1;
         }}
 
@@ -1360,6 +1414,8 @@ class HTMLMapGenerator:
             const available = (lightbox.clientHeight || window.innerHeight) - paddingTop - paddingBottom;
             const maxHeight = Math.max(160, available - titleH - indexH - noteH - (isMobile ? 0 : navH) - chrome);
             lightboxImg.style.maxHeight = `${{maxHeight}}px`;
+            lightboxVideo.style.maxHeight = `${{maxHeight}}px`;
+            lightboxFrame.style.maxHeight = `${{maxHeight}}px`;
         }}
 
         function preserveViewOnResize(newWidth, newHeight) {{
@@ -2203,11 +2259,24 @@ class HTMLMapGenerator:
             display: flex;
         }}
 
-        #lightbox img {{
+        #lightbox img, #lightbox video {{
             max-width: 95%;
             max-height: 85%;
             object-fit: contain;
             box-shadow: 0 0 50px rgba(0,0,0,0.5);
+        }}
+
+        #lightbox-frame {{
+            width: min(95%, 1280px);
+            max-height: 85%;
+            aspect-ratio: 16 / 9;
+            border: none;
+            background: #000000;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+        }}
+
+        #lightbox [hidden] {{
+            display: none !important;
         }}
 
         #lightbox-meta {{
@@ -2673,10 +2742,15 @@ class HTMLMapGenerator:
                 touch-action: none;
             }}
 
-            #lightbox img {{
+            #lightbox img, #lightbox video {{
                 max-width: 96vw;
                 max-height: 78vh;
                 margin-top: 0;
+            }}
+
+            #lightbox-frame {{
+                width: 96vw;
+                max-height: 78vh;
             }}
 
             #lightbox-meta {{
@@ -2845,6 +2919,8 @@ class HTMLMapGenerator:
             <div id="lightbox" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="lightbox-title" aria-describedby="lightbox-note" tabindex="-1">
                 <button id="lightbox-close" type="button" aria-label="Close photo">&times;</button>
                 <img id="lightbox-img" src="" alt="">
+                <video id="lightbox-video" controls playsinline preload="metadata" hidden></video>
+                <iframe id="lightbox-frame" allow="autoplay; fullscreen" allowfullscreen hidden></iframe>
                 <div id="lightbox-meta">
                     <div id="lightbox-header">
                         <span></span>
@@ -2898,6 +2974,8 @@ class HTMLMapGenerator:
         const container = document.getElementById('map-container');
         const lightbox = document.getElementById('lightbox');
         const lightboxImg = document.getElementById('lightbox-img');
+        const lightboxVideo = document.getElementById('lightbox-video');
+        const lightboxFrame = document.getElementById('lightbox-frame');
         const lightboxTitle = document.getElementById('lightbox-title');
         const lightboxIndex = document.getElementById('lightbox-index');
         const lightboxNote = document.getElementById('lightbox-note');
@@ -3227,6 +3305,8 @@ class HTMLMapGenerator:
             const availableHeight = (lightbox.clientHeight || window.innerHeight) - paddingTop - paddingBottom;
             const maxHeight = Math.max(160, availableHeight - metaHeight - navHeight - actionsHeight - chrome);
             lightboxImg.style.maxHeight = `${{maxHeight}}px`;
+            lightboxVideo.style.maxHeight = `${{maxHeight}}px`;
+            lightboxFrame.style.maxHeight = `${{maxHeight}}px`;
         }}
 
         function setNotesOpen(isOpen) {{
@@ -3245,11 +3325,41 @@ class HTMLMapGenerator:
             }});
         }}
 
+        function resetLightboxMedia() {{
+            lightboxVideo.pause();
+            lightboxVideo.removeAttribute('src');
+            lightboxVideo.load();
+            lightboxVideo.hidden = true;
+            lightboxFrame.src = 'about:blank';
+            lightboxFrame.hidden = true;
+            lightboxImg.src = '';
+            lightboxImg.hidden = false;
+        }}
+
+        function applyLightboxMedia(photo) {{
+            resetLightboxMedia();
+            if (photo.isVideo) {{
+                lightboxImg.hidden = true;
+                if (photo.embed) {{
+                    lightboxFrame.src = photo.src;
+                    lightboxFrame.hidden = false;
+                }} else {{
+                    if (photo.poster) {{ lightboxVideo.poster = photo.poster; }}
+                    else {{ lightboxVideo.removeAttribute('poster'); }}
+                    lightboxVideo.src = photo.src;
+                    lightboxVideo.hidden = false;
+                }}
+            }} else {{
+                lightboxImg.src = photo.src;
+                lightboxImg.hidden = false;
+            }}
+        }}
+
         function showPhoto(index) {{
             if (index < 0 || index >= photos.length) return;
             currentPhotoIndex = index;
             const photo = photos[index];
-            lightboxImg.src = photo.src;
+            applyLightboxMedia(photo);
             lightboxTitle.textContent = photo.filename || "";
             lightboxIndex.textContent = `Photo ${{index + 1}} of ${{photos.length}}`;
             const noteText = photo.note ? String(photo.note) : "";
@@ -3289,7 +3399,7 @@ class HTMLMapGenerator:
             setNotesOpen(false);
             lightbox.classList.remove('active');
             lightbox.setAttribute('aria-hidden', 'true');
-            lightboxImg.src = '';
+            resetLightboxMedia();
             currentPhotoIndex = -1;
             if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {{
                 lastFocusedElement.focus();
