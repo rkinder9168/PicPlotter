@@ -73,15 +73,19 @@ def single_html(**kwargs):
     )
 
 
-def multi_html(**kwargs):
+def make_page(idx):
+    return {"id": f"page-{idx}", "name": f"Page {idx}",
+            "aerial_image_bytes": png_bytes((255, 255, 255)),
+            "aerial_image_mime": "image/png", "aerial_image_size": (8, 8),
+            "photos": [{"filepath": f"/p/{idx}.jpg", "filename": f"{idx}.jpg",
+                        "display_name": f"P{idx}", "image_data": jpg_bytes((255, 0, 0))}],
+            "marker_pixels": [PixelPoint(2, 3)]}
+
+
+def multi_html(n_pages=1, **kwargs):
     gen = HTMLMapGenerator(project_name="MP", marker_size=64, **kwargs)
     return gen.generate_multi_page_html(
-        [{"id": "page-1", "name": "Page 1",
-          "aerial_image_bytes": png_bytes((255, 255, 255)),
-          "aerial_image_mime": "image/png", "aerial_image_size": (8, 8),
-          "photos": [{"filepath": "/p/a.jpg", "filename": "a.jpg",
-                      "display_name": "A", "image_data": jpg_bytes((255, 0, 0))}],
-          "marker_pixels": [PixelPoint(2, 3)]}],
+        [make_page(i + 1) for i in range(n_pages)],
         return_content=True,
     )
 
@@ -105,11 +109,17 @@ class HiddenMarkersSidebarGeneratorTests(unittest.TestCase):
         self.assertIn('<body class="markers-hidden">', html)
         self.assertNotIn("no-sidebar\"", html.split("<body", 1)[1][:40])
 
-    def test_multi_page_hide_markers_applies_but_not_sidebar(self):
-        html = multi_html(hide_markers=True, hide_sidebar=True)
-        # Page mode keeps its sidebar (it holds page nav) — only markers-hidden applies.
+    def test_multi_page_single_page_honors_hide_sidebar(self):
+        # One page -> nothing to navigate, so the sidebar may be hidden.
+        html = multi_html(n_pages=1, hide_markers=True, hide_sidebar=True)
+        self.assertIn('<body class="markers-hidden no-sidebar">', html)
+        self.assertIn("body.no-sidebar #layout", html)
+        self.assertIn("body.markers-hidden .marker", html)
+
+    def test_multi_page_multiple_pages_ignore_hide_sidebar(self):
+        # Two+ pages -> sidebar holds the page nav, so hide_sidebar is ignored.
+        html = multi_html(n_pages=2, hide_markers=True, hide_sidebar=True)
         self.assertIn('<body class="markers-hidden">', html)
-        self.assertNotIn("no-sidebar", html)
         self.assertIn("body.markers-hidden .marker", html)
 
 

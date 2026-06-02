@@ -1504,7 +1504,7 @@
                                 <input id="editor-hide-sidebar" type="checkbox">
                                 <span>Hide sidebar</span>
                             </label>
-                            <div id="hide-sidebar-hint" class="hint">Markers stay clickable; numbers are hidden on the deployed image. Hide sidebar applies to single-page exports only.</div>
+                            <div id="hide-sidebar-hint" class="hint">Markers stay clickable; numbers are hidden on the deployed image. Hide sidebar is unavailable when a project has multiple pages.</div>
                         </div>
 
                         <div class="panel">
@@ -5443,11 +5443,15 @@
                 hideMarkersInput.checked = !!editor.hideMarkers;
             }
             if (hideSidebarInput) {
-                // Hide-sidebar only applies to single-page (group-mode) deliverables.
-                // In Page mode the sidebar holds the page navigation, so disable it there.
-                const pageMode = editor.assignmentMode === "page";
-                hideSidebarInput.disabled = pageMode;
-                hideSidebarInput.checked = pageMode ? false : !!editor.hideSidebar;
+                // The sidebar holds the page navigation in Page mode, so it can only be
+                // hidden when there's a single page (nothing to navigate). With 2+ pages
+                // the option is disabled.
+                const pageCount = editor.assignmentMode === "page"
+                    ? (editor.pages ? editor.pages.length : 0)
+                    : 0;
+                const blocked = pageCount > 1;
+                hideSidebarInput.disabled = blocked;
+                hideSidebarInput.checked = blocked ? false : !!editor.hideSidebar;
             }
         }
 

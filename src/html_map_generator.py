@@ -464,6 +464,7 @@ class HTMLMapGenerator:
         html_content = self._generate_multi_page_html(
             pages_json=json.dumps(page_data),
             plain_marker_src=marker_src,
+            page_count=len(page_data),
         )
 
         if return_content:
@@ -507,6 +508,7 @@ class HTMLMapGenerator:
         self,
         pages_json: str,
         plain_marker_src: str,
+        page_count: int = 1,
     ) -> str:
         """Generate the complete multi-page HTML document."""
         marker_font_size = max(12, int(self.marker_size * 0.29))
@@ -532,8 +534,14 @@ class HTMLMapGenerator:
             f'{proposal_link_html}{download_link_html}</div>'
         )
 
-        # Page mode keeps its sidebar (it holds the page nav), so only hide_markers applies.
-        body_class = "markers-hidden" if self.hide_markers else ""
+        # The sidebar holds the page navigation, so it can only be hidden when there is a
+        # single page (nothing to navigate). With 2+ pages, ignore hide_sidebar.
+        body_classes = []
+        if self.hide_markers:
+            body_classes.append("markers-hidden")
+        if self.hide_sidebar and page_count <= 1:
+            body_classes.append("no-sidebar")
+        body_class = " ".join(body_classes)
 
         return f'''<!DOCTYPE html>
 <html lang="en">
@@ -567,6 +575,15 @@ class HTMLMapGenerator:
             grid-template-columns: var(--sidebar-width) 1fr;
             width: 100vw;
             height: 100vh;
+        }}
+        body.no-sidebar #layout {{
+            grid-template-columns: 1fr;
+        }}
+        body.no-sidebar #sidebar,
+        body.no-sidebar #sidebar-toggle,
+        body.no-sidebar #sidebar-scrim,
+        body.no-sidebar #sidebar-close {{
+            display: none !important;
         }}
         #sidebar {{
             background: #ffffff;

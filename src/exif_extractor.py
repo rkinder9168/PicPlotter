@@ -406,7 +406,7 @@ def is_supported_format(filepath: str) -> bool:
         True if format is supported
     """
     ext = Path(filepath).suffix.lower()
-    supported = ['.jpg', '.jpeg']
+    supported = ['.jpg', '.jpeg', '.png']
 
     if HEIC_SUPPORTED:
         supported.extend(['.heic', '.heif'])
@@ -421,7 +421,7 @@ def get_supported_extensions() -> list:
     Returns:
         List of extensions like ['.jpg', '.jpeg', '.heic']
     """
-    extensions = ['.jpg', '.jpeg', '.JPG', '.JPEG']
+    extensions = ['.jpg', '.jpeg', '.JPG', '.JPEG', '.png', '.PNG']
 
     if HEIC_SUPPORTED:
         extensions.extend(['.heic', '.heif', '.HEIC', '.HEIF'])
