@@ -4,12 +4,14 @@
 
 ---
 
-## Project Status: Feature Complete — v4.0.0
+## Project Status: Feature Complete — v4.2.1
 
 All planned features implemented. Windows and macOS builds available via GitHub Actions.
 
 **Current Notes**
 - Single-window pywebview app with embedded tile-based editor view
+- Photo + video media: photos (JPG/PNG/HEIC) and videos (`.mp4/.mov/.m4v/.webm`); videos play in the web deliverable
+- Per-project display options: invisible-but-clickable markers and hideable sidebar
 - Google Drive folder import with URL-referenced web deployments
 - Offline HTML export uses a stitched 2k snapshot (no API key required)
 - Tile-based preview matches the export snapshot
@@ -171,6 +173,20 @@ Before distribution, verify:
 ---
 
 ## Version History
+
+### v4.2.1
+- Import Media now accepts PNG (`.png`/`.PNG` added to the photo extensions, flows into the file-dialog filter and `is_supported_media`); PNGs without GPS import as manually-placed photos, RGBA composited onto white when compressed to JPEG
+- Hide-sidebar is now allowed whenever there is a single page (group mode, or Page mode with one page) instead of being blocked for all Page-mode projects; with 2+ pages the option stays disabled and the multi-page generator ignores the flag (the sidebar holds page nav). `generate_multi_page_html` passes `page_count` to the template, which emits the `no-sidebar` body class only when `page_count <= 1`
+
+### v4.2.0
+- New per-project display options, persisted like `marker_size` (map_overrides.json + project JSON): `hide_markers` and `hide_sidebar`
+- Invisible markers: deployed page hides the marker logo + number badge while each marker stays a clickable hotspot (lightbox still opens); the editor shows a dashed-circle outline at true size with the number so sizing/placement stay visible. Applies to single-page and multi-page deliverables
+- Hide sidebar: full-bleed map for the single-page deliverable
+- Wired through `AppState`, `_load_overrides`/`_apply_overrides`/`_serialize_overrides_state`, `get_editor_state`, `_build_html`, and every `HTMLMapGenerator(...)` construction site; both HTML templates gain `markers-hidden`/`no-sidebar` body classes + CSS
+
+### v4.1.0
+- Video support alongside photos: `.mp4/.mov/.m4v/.webm` import from local disk and Drive, place on the map like photos, and play in the web (Netlify) deliverable (Drive via embed player, local uploaded as Netlify assets); single-file HTML and KMZ exclude video with a warning
+- New `src/video_metadata.py` (pure-stdlib MP4/MOV ISO-BMFF GPS parsing) and combined `is_supported_media`/`get_supported_media_extensions` helpers
 
 ### v4.0.0
 - Per-project Netlify URLs: each saved project owns a permanent `site_id` + deploy URL stored in its JSON; redeploys update the same site so client links don't break when other projects are deployed

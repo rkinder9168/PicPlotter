@@ -8,7 +8,7 @@ Auto-plot Google satellite imagery from your geotagged photos, then export KMZ o
 
 1. Double-click `PicPlotterAuto.exe`
 2. (Optional) Enter your Google Maps API key on the main screen and click "Save"
-3. Click "Import Photos" to select local images or videos, or "Import from Drive" to load photos/videos from a shared Google Drive folder
+3. Click "Import Media" to select local images (JPG, PNG, HEIC) or videos, or "Import from Drive" to load photos/videos from a shared Google Drive folder
 4. Click "Open Map Editor" to load the tile preview and markers
 5. Adjust marker size, drag markers, and rotate the view if needed
 6. Export the HTML deliverable from the map editor
@@ -26,8 +26,9 @@ Auto-plot Google satellite imagery from your geotagged photos, then export KMZ o
 - **Project memory** - save and reload project settings (name, client, address, photo placements, custom background, deployed URL, etc.) so you don't have to retype or re-pick anything
 - **Custom branding** - upload your own logo (JPG/PNG) and enter company contact info; logo appears as photo markers and in the HTML deliverable's "Prepared by" block
 - **Page mode** - organize photos into named deliverable pages; each page owns its own background, view, rotation, and placements, and exports a multi-page interactive HTML with page navigation and per-page legend
+- **Display options** - per-project toggles to make markers invisible (a clean image where each marker is still a clickable hotspot and the numbers are hidden on the deployed page) and to hide the sidebar for a full-bleed map. In the editor, invisible markers show a dashed-circle outline with their number so you can still size and place them
 - **Modern dark UI** - single-window experience
-- **Supports HEIC and JPG** - works with iPhone and Android photos; videos in `.mp4/.mov/.m4v/.webm`
+- **Supports JPG, PNG, and HEIC** - works with iPhone and Android photos; videos in `.mp4/.mov/.m4v/.webm`
 
 ## Requirements
 
@@ -187,11 +188,13 @@ The HTML map features:
 - Interactive pan and zoom
 - Clickable markers with photo lightbox
 - Adjustable marker size with live preview
+- Optional invisible markers (clickable hotspots, no logo or number) and a hideable sidebar for a clean, full-bleed image
 - Single offline HTML output (no API key required)
 
 ## Supported Photo Formats
 
 - **JPG/JPEG** - standard camera photos
+- **PNG** - screenshots, exported maps, and other images (placed manually when no GPS is present)
 - **HEIC/HEIF** - iPhone photos (if pillow-heif is installed)
 
 ## Tips

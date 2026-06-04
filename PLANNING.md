@@ -40,6 +40,17 @@ This complexity made the app impractical for general public distribution.
 - Auto-save flow: Create KMZ and Create Interactive Image require a Project Name and save the project before proceeding
 - UI polish: New Project button (white) left of Save/Delete (right), horizontal label+input rows for Project Name / Proposal Link / Raw Photos Link / Client / Company / Address / Image Quality, default Image Quality 10%, "Optional" placeholders replace redundant hint divs, "Saved Projects" → "Projects" and "Download Photos" → "Raw Photos Link", deployed URL surfaced under Save/Delete on the main page
 
+### v4.2 - Media Formats + Display Options
+- Import Media accepts PNG in addition to JPG/HEIC; `.png` added once to `is_supported_format`/`get_supported_extensions` (exif_extractor) so it propagates to the file dialog, `is_supported_media`, and validation. PNGs without GPS follow the existing manual-placement path; RGBA is composited onto white during JPEG compression
+- Two per-project boolean display options, `hide_markers` and `hide_sidebar`, modeled on the existing `marker_size` flow (persisted in `map_overrides.json` + project JSON, round-tripped via `_serialize_overrides_state`/`_apply_overrides`, seeded into the editor via `get_editor_state`/`_build_html`)
+- Invisible markers hide the logo + number badge on the deployed page but keep each marker a clickable hotspot (the `.marker` div stays sized in the DOM, so existing click handlers still open the lightbox); the editor renders a dashed-circle ghost with the number so placement stays visible. Implemented purely with a `markers-hidden` body class + CSS in both HTML templates — no markup change
+- Hide-sidebar collapses the `#layout` grid (`no-sidebar` body class). It is only meaningful when there is no page navigation to lose, so the multi-page generator emits `no-sidebar` only when `page_count <= 1`, and the editor disables the checkbox when a project has 2+ pages
+
+### v4.1 - Video Media
+- Photos and short videos (`.mp4/.mov/.m4v/.webm`) share the import/placement pipeline; videos play in the web (Netlify) deliverable (Drive via embed iframe, local uploaded as `/media/...` assets) while single-file HTML and KMZ strip video with a warning
+- GPS parsed from MP4/MOV ISO-BMFF containers in a pure-stdlib `src/video_metadata.py` (no ffmpeg); local files reliable, Drive best-effort → manual placement
+- Format classification centralized in `is_supported_media` / `get_supported_media_extensions` (photo helpers + video helpers), keeping one source of truth for the file dialog and validation
+
 ### v3.3 - Page Mode
 - Photos can be organized into named deliverable pages instead of (or alongside) colored groups
 - New `assignment_mode: "group" | "page"` toggle in the UI; inactive mode's data is preserved, only the active mode drives the editor and exports
