@@ -1106,8 +1106,6 @@ class AppApi:
 
     def _logo_data_uri(self) -> str:
         path = get_user_logo_path()
-        if path is None:
-            path = get_asset_path("everline-horizontal-logo.jpg")
         if not path or not path.exists():
             return ""
         try:
@@ -2681,7 +2679,7 @@ def _build_html(state: AppState) -> str:
     template_path = get_asset_path("app.html")
     html = template_path.read_text(encoding="utf-8")
 
-    marker_path = get_asset_path("marker_outlined_transparent.png")
+    marker_path = get_asset_path("marker_pin.png")
     marker_b64 = ""
     if marker_path.exists():
         marker_b64 = base64.b64encode(marker_path.read_bytes()).decode("utf-8")

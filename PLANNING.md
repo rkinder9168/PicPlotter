@@ -62,12 +62,12 @@ This complexity made the app impractical for general public distribution.
 - New `src/photo_pages.py` module owns `PhotoPage`, `PageEditorState`, and `PageAssignments`
 
 ### v3.2 - User-Configurable Branding
-- Replace hardcoded EverLine branding with global, user-configurable assets
+- Replace hardcoded branding with global, user-configurable assets
 - Logo upload (JPG/PNG, normalized to ≤ 512px PNG) becomes the photo marker base AND the HTML sidebar header logo
 - Group identity moves from pixel-tinting the logo to drawing a colored rectangular outline around it — preserves brand colors while keeping groups visually distinct
 - Marker numbers move to a small white badge in the lower-right corner so they remain readable against any logo
 - New "Prepared by" block in HTML deliverables (company name, address, phone, optional website) sits alongside the existing client info; website strings are normalized (auto-prepend `https://`, render plain text when no `.`)
-- Settings stored globally at `~/.picplotter_auto/logo.png` and in `~/.picplotter_auto/config.json`; bundled EverLine assets remain as fallback
+- Settings stored globally at `~/.picplotter_auto/logo.png` and in `~/.picplotter_auto/config.json`; bundled generic pin (`assets/marker_pin.png`) is the marker fallback; no default header logo
 
 ---
 
@@ -223,7 +223,7 @@ The UI surfaces a New Project button (left), a Projects dropdown that loads on s
 
 Branding is intentionally global rather than per-project — the typical user is one company shipping every deliverable under the same identity, so re-entering it per project would be churn.
 
-- Logo file lives at `~/.picplotter_auto/logo.png` (always normalized to PNG on save). Lookup precedence in `MarkerColorizer._load_base_image()` and `HTMLMapGenerator._get_logo_image_src()`: user file → bundled fallback (`assets/marker_outlined_transparent.png`, `assets/everline-horizontal-logo.jpg`).
+- Logo file lives at `~/.picplotter_auto/logo.png` (always normalized to PNG on save). Lookup precedence in `MarkerColorizer._load_base_image()` and `HTMLMapGenerator._get_logo_image_src()`: user file → bundled marker fallback (`assets/marker_pin.png`); header logo has no fallback.
 - Company info (name, address, phone, website) lives in the existing `~/.picplotter_auto/config.json`.
 - After a logo upload, `reset_colorizer()` invalidates the in-memory marker cache so the next editor session and next export pick up the new logo.
 - Markers render as `_normalize_to_square(logo)` + colored rectangle outline drawn around the logo's alpha bbox; logo pixels are never modified, only framed.

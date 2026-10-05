@@ -1,6 +1,6 @@
 #define AppName "PicPlotter Auto"
 #define AppExe "PicPlotterAuto.exe"
-#define AppPublisher "Everline"
+#define AppPublisher "rkinder9168"
 #define AppId "FBB44562-DC21-4172-90A2-EF1000EEC2EB"
 #ifndef AppVersion
 #define AppVersion "3.0.0"

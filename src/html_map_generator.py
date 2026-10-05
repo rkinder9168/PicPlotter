@@ -131,7 +131,6 @@ class HTMLMapGenerator:
     # Marker display size in pixels (the asset is large, we resize it)
     MARKER_DISPLAY_SIZE = 96
     MARKER_ASSET_SIZE = 256
-    DEFAULT_LOGO_FILENAME = "everline-horizontal-logo.jpg"
     LOGO_MAX_WIDTH = 317
     LOGO_MAX_HEIGHT = 92
 
@@ -193,7 +192,7 @@ class HTMLMapGenerator:
         if self._marker_b64 is not None:
             return self._marker_b64
 
-        marker_path = get_asset_path('marker_outlined_transparent.png')
+        marker_path = get_asset_path('marker_pin.png')
 
         if marker_path.exists():
             # Load and resize the marker for web use
@@ -215,15 +214,11 @@ class HTMLMapGenerator:
         return self._marker_b64
 
     def _get_logo_image_src(self) -> str:
-        """Load and encode the logo image as a data URI (user logo preferred)."""
+        """Load and encode the user logo as a data URI (empty when none uploaded)."""
         if self._logo_b64 is None:
-            user_logo = get_user_logo_path()
-            if user_logo is not None and user_logo.exists():
-                logo_path = user_logo
-            else:
-                logo_path = get_asset_path(self.DEFAULT_LOGO_FILENAME)
+            logo_path = get_user_logo_path()
 
-            if logo_path.exists():
+            if logo_path is not None and logo_path.exists():
                 with Image.open(logo_path) as img:
                     if img.mode not in ("RGB", "RGBA"):
                         img = img.convert("RGBA" if "A" in img.getbands() else "RGB")

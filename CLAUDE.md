@@ -81,8 +81,8 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 ├── docs/
 │   └── page-mode-feature-plan.md
 ├── assets/
-│   ├── marker_outlined_transparent.png  # Bundled fallback marker base
-│   ├── everline-horizontal-logo.jpg     # Bundled fallback header logo
+│   ├── marker_pin.png                   # Bundled fallback marker base (generic pin)
+│   ├── icon.ico                         # App icon (generated from marker_pin.png)
 │   └── app.html
 ├── build/
 │   └── build.py                # Cross-platform PyInstaller build script
@@ -162,7 +162,7 @@ PicPlotter Auto uses a tile-based Google satellite editor to adjust markers and 
 - `generate_multi_page_html()` builds a single self-contained multi-page deliverable for Page mode: ordered `pages[]` payload (id, name, background, dimensions, photos, marker pixels, legend); deliverable JS swaps background, markers, lightbox scope, and legend on page change. The deliverable is mobile-responsive — slide-out sidebar with scrim under 900px, pinch-to-zoom + one-finger pan via touch handlers, `env(safe-area-inset-*)` padding, and a `visualViewport` listener that keeps the lightbox usable as iOS Safari's URL bar collapses
 
 ### `src/marker_utils.py`
-- Loads the marker base image — prefers the user-uploaded logo, falls back to the bundled `marker_outlined_transparent.png`
+- Loads the marker base image — prefers the user-uploaded logo, falls back to the bundled generic `marker_pin.png`. No default header logo — the deliverable header shows a logo only when the user uploads one
 - `_normalize_to_square()` centers the logo on a transparent square canvas with margin (controlled by `LOGO_CONTENT_RATIO`) so the group rectangle has room to draw
 - `colorize_marker()` draws a colored rectangular outline around the logo's alpha bbox — group identity comes from the rectangle color, not from tinting the logo. Default group uses a black rectangle.
 - `MarkerColorizer` caches colored variants; `reset_colorizer()` invalidates the cache after a logo change

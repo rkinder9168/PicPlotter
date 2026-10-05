@@ -184,7 +184,7 @@ class MarkerColorizer:
         if user_logo is not None and user_logo.exists():
             source_path = user_logo
         else:
-            marker_path = get_asset_path("marker_outlined_transparent.png")
+            marker_path = get_asset_path("marker_pin.png")
             if marker_path.exists():
                 source_path = marker_path
 

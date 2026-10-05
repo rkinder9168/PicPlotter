@@ -9,9 +9,7 @@ ICON_ARG = ICON_PATH if os.path.exists(ICON_PATH) else None
 
 datas = [
     # Include all assets (marker icons)
-    (f'{WSL_PROJECT}\\assets\\marker_outlined_transparent.png', 'assets'),
     (f'{WSL_PROJECT}\\assets\\marker_pin.png', 'assets'),
-    (f'{WSL_PROJECT}\\assets\\everline-horizontal-logo.jpg', 'assets'),
     (f'{WSL_PROJECT}\\assets\\icon.ico', 'assets'),
     (f'{WSL_PROJECT}\\assets\\app.html', 'assets'),
 ]

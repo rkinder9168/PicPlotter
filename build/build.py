@@ -134,9 +134,7 @@ def build_executable():
     # Add bundled assets (icons, logo, app shell)
     sep = ";" if PLATFORM == "Windows" else ":"
     asset_files = [
-        PROJECT_ROOT / "assets" / "marker_outlined_transparent.png",
         PROJECT_ROOT / "assets" / "marker_pin.png",
-        PROJECT_ROOT / "assets" / "everline-horizontal-logo.jpg",
         PROJECT_ROOT / "assets" / "icon.ico",
         PROJECT_ROOT / "assets" / "icon.icns",
         PROJECT_ROOT / "assets" / "app.html",

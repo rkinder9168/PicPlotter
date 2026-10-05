@@ -84,7 +84,7 @@ def get_asset_path(filename: str) -> Path:
     Get path to asset file, handling both development and PyInstaller bundled scenarios.
 
     Args:
-        filename: Name of the asset file (e.g., 'marker_outlined_transparent.png')
+        filename: Name of the asset file (e.g., 'marker_pin.png')
 
     Returns:
         Path to the asset file
